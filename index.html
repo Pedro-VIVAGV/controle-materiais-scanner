@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>Controle de Materiais</title>
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+<header class="topbar">
+  <h1>Controle de Materiais</h1>
+</header>
+
+<main id="app">
+
+  <!-- SCANNER -->
+  <section id="screen-scanner" class="screen active">
+    <div class="field">
+      <label for="evento-select">Evento ativo</label>
+      <select id="evento-select"></select>
+    </div>
+
+    <div id="reader"></div>
+    <p id="scanner-hint" class="hint">Aponte a câmera para o QR code do item.</p>
+    <button id="btn-toggle-scan" class="btn btn-primary">Iniciar câmera</button>
+
+    <div id="lista-esperada" class="expected-list hidden">
+      <h3>Lista esperada do evento</h3>
+      <ul id="expected-items"></ul>
+    </div>
+  </section>
+
+  <!-- CONFIRMAÇÃO -->
+  <section id="screen-confirmacao" class="screen">
+    <div class="confirm-card">
+      <h2 id="confirm-nome">—</h2>
+      <p id="confirm-detalhes" class="hint"></p>
+      <p id="confirm-retorno-flag" class="badge"></p>
+
+      <div class="field">
+        <label for="confirm-evento">Evento</label>
+        <select id="confirm-evento"></select>
+      </div>
+
+      <div class="confirm-actions">
+        <button id="btn-saida" class="btn btn-saida">SAÍDA</button>
+        <button id="btn-retorno" class="btn btn-retorno">RETORNO</button>
+      </div>
+
+      <button id="btn-cancelar-confirm" class="btn btn-ghost">Cancelar / voltar a bipar</button>
+    </div>
+  </section>
+
+  <!-- PRODUTOS -->
+  <section id="screen-produtos" class="screen">
+    <h2>Cadastro de Produtos</h2>
+    <form id="form-produto" class="card-form">
+      <input type="hidden" id="produto-editando" value="" />
+      <div class="field"><label>Código (QR)</label><input id="p-codigo" required /></div>
+      <div class="field"><label>Nome</label><input id="p-nome" required /></div>
+      <div class="field">
+        <label>Categoria</label>
+        <select id="p-categoria">
+          <option value="Caixote">Caixote</option>
+          <option value="Caixa">Caixa</option>
+          <option value="Bag">Bag</option>
+          <option value="Avulso">Item avulso</option>
+        </select>
+      </div>
+      <div class="field" id="p-contem-field">
+        <label>Contém (códigos separados por vírgula, se for container)</label>
+        <input id="p-contem" placeholder="ex: COD001,COD002" />
+      </div>
+      <div class="field"><label>Quantidade</label><input id="p-quantidade" placeholder="ex: 100un por caixa" /></div>
+      <div class="field">
+        <label>Retorno obrigatório</label>
+        <select id="p-retorno">
+          <option value="Sim">Sim</option>
+          <option value="Não">Não</option>
+          <option value="Parcial">Parcial</option>
+        </select>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Salvar produto</button>
+        <button type="button" id="btn-cancelar-produto" class="btn btn-ghost hidden">Cancelar edição</button>
+      </div>
+    </form>
+
+    <table class="data-table">
+      <thead><tr><th>Código</th><th>Nome</th><th>Categoria</th><th>Retorno</th><th></th></tr></thead>
+      <tbody id="produtos-tbody"></tbody>
+    </table>
+  </section>
+
+  <!-- TEMPLATES -->
+  <section id="screen-templates" class="screen">
+    <h2>Templates de Evento</h2>
+    <form id="form-template" class="card-form">
+      <div class="field">
+        <label>Tipo de evento</label>
+        <select id="t-nome">
+          <option>Pré-evento</option>
+          <option>Colação de Grau</option>
+          <option>Missa</option>
+          <option>Baile</option>
+          <option>Cerimônia do Jaleco</option>
+          <option>Sessão de Fotos</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Adicionar item ao template</label>
+        <div class="inline-row">
+          <select id="t-item-select"></select>
+          <input id="t-item-qtd" placeholder="Quantidade" style="max-width:110px" />
+          <button type="button" id="btn-add-template-item" class="btn btn-secondary">Adicionar</button>
+        </div>
+      </div>
+    </form>
+
+    <ul id="template-itens-lista" class="edit-list"></ul>
+    <button id="btn-salvar-template" class="btn btn-primary">Salvar template</button>
+
+    <hr />
+    <h3>Criar evento a partir de um template</h3>
+    <div class="card-form">
+      <div class="field"><label>Nome do evento</label><input id="ev-nome" placeholder="ex: Baile Turma XYZ 2026" /></div>
+      <div class="field">
+        <label>Template base</label>
+        <select id="ev-template"></select>
+      </div>
+      <button type="button" id="btn-carregar-template-evento" class="btn btn-secondary">Puxar lista do template</button>
+    </div>
+    <ul id="evento-itens-lista" class="edit-list"></ul>
+    <button id="btn-salvar-evento" class="btn btn-primary hidden">Salvar evento</button>
+  </section>
+
+  <!-- HISTÓRICO / STATUS -->
+  <section id="screen-historico" class="screen">
+    <h2>Status atual</h2>
+    <div id="alertas-reais" class="status-block">
+      <h3 class="alert-title">⚠️ Retorno obrigatório pendente</h3>
+      <ul id="lista-alertas" class="status-list"></ul>
+    </div>
+    <div id="esperados-fora" class="status-block">
+      <h3>Fora, retorno não obrigatório (esperado)</h3>
+      <ul id="lista-esperados" class="status-list"></ul>
+    </div>
+
+    <h2>Histórico completo</h2>
+    <table class="data-table">
+      <thead><tr><th>Data/Hora</th><th>Item</th><th>Tipo</th><th>Evento</th></tr></thead>
+      <tbody id="historico-tbody"></tbody>
+    </table>
+  </section>
+
+</main>
+
+<nav class="bottomnav">
+  <button data-screen="screen-scanner" class="nav-btn active">Scanner</button>
+  <button data-screen="screen-produtos" class="nav-btn">Produtos</button>
+  <button data-screen="screen-templates" class="nav-btn">Templates</button>
+  <button data-screen="screen-historico" class="nav-btn">Status</button>
+</nav>
+
+<div id="toast" class="toast hidden"></div>
+
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="js/config.js"></script>
+<script src="js/api.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
