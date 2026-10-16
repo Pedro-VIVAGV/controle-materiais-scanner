@@ -307,8 +307,16 @@ function startScanner() {
     toast('Crie e selecione um evento antes de bipar.', true);
     return;
   }
-  state.html5QrCode = state.html5QrCode || new Html5Qrcode('reader');
-  const config = { fps: 10, qrbox: { width: 250, height: 250 }, aspectRatio: 1.0 };
+  const F = Html5QrcodeSupportedFormats;
+  state.html5QrCode = state.html5QrCode || new Html5Qrcode('reader', {
+    formatsToSupport: [F.QR_CODE, F.CODE_128, F.CODE_39, F.EAN_13, F.EAN_8, F.UPC_A],
+    useBarCodeDetectorIfSupported: true
+  });
+  // Área de leitura retangular e larga: serve para QR e para códigos de barras 1D.
+  const config = {
+    fps: 10,
+    qrbox: (w, h) => ({ width: Math.floor(Math.min(w, h * 1.6) * 0.9), height: Math.floor(Math.min(w, h * 1.6) * 0.5) })
+  };
   state.html5QrCode.start(
     { facingMode: 'environment' },
     config,
