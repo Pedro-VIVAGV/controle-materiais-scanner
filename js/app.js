@@ -21,11 +21,16 @@ function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById(id).classList.add('active');
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.toggle('active', b.dataset.screen === id));
-  if (id !== 'screen-scanner' && state.scanning) stopScanner();
+  // A confirmação mantém a câmera ligada (pausada) para o próximo item.
+  if (id !== 'screen-scanner' && id !== 'screen-confirmacao' && state.scanning) stopScanner();
 }
 
 document.querySelectorAll('.nav-btn').forEach(btn => {
-  btn.addEventListener('click', () => showScreen(btn.dataset.screen));
+  btn.addEventListener('click', () => {
+    if (btn.dataset.screen === 'screen-scanner' && state.pendingScan) return voltarAoScanner();
+    state.pendingScan = null;
+    showScreen(btn.dataset.screen);
+  });
 });
 
 function toast(msg, isError) {
@@ -255,17 +260,63 @@ document.getElementById('btn-salvar-evento').addEventListener('click', async () 
 
 /* ================= EVENTO ATIVO / SCANNER ================= */
 
+const DIAS_SEMANA = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
+
+// Eventos importados têm o nome "dd/mm/aaaa - Fundo - Tipo (Local) [Fornecedor]".
+// Extrai data e rótulo curto; eventos criados à mão não têm data.
+function parseEvento(ev) {
+  const m = String(ev.nome).match(/^(\d{2})\/(\d{2})\/(\d{4}) - (.*)$/);
+  if (!m) return { ev, data: null, label: ev.nome };
+  const data = new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
+  const resto = m[4].replace(/\s*\[[^\]]*\]\s*$/, '');
+  const sep = resto.indexOf(' - ');
+  const fundo = (sep >= 0 ? resto.slice(0, sep) : resto).replace(/_/g, ' ').trim();
+  const tipo = (sep >= 0 ? resto.slice(sep + 3) : '').replace(/\s*\(.*\)\s*$/, '').trim();
+  const dia = `${m[1]}/${m[2]} ${DIAS_SEMANA[data.getDay()]}`;
+  return { ev, data, label: tipo ? `${dia} · ${tipo} · ${fundo}` : `${dia} · ${fundo}` };
+}
+
+function buildEventoOptions() {
+  if (!state.eventos.length) return '<option value="">Nenhum evento criado</option>';
+  const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+  const itens = state.eventos.map(parseEvento);
+  const opt = p => `<option value="${p.ev.id}">${escapeHtml(p.label)}</option>`;
+
+  const manuais = itens.filter(p => !p.data).reverse();
+  const futuros = itens.filter(p => p.data && p.data >= hoje).sort((a, b) => a.data - b.data);
+  const passados = itens.filter(p => p.data && p.data < hoje).sort((a, b) => b.data - a.data);
+
+  // Escolha inicial: o evento futuro mais próximo.
+  state.eventoPadraoId = (futuros[0] || manuais[0] || passados[0]).ev.id;
+  let html = '';
+  if (manuais.length) html += `<optgroup label="Criados manualmente">${manuais.map(opt).join('')}</optgroup>`;
+  const porMes = new Map();
+  futuros.forEach(p => {
+    const mes = p.data.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+    const titulo = mes.charAt(0).toUpperCase() + mes.slice(1);
+    if (!porMes.has(titulo)) porMes.set(titulo, []);
+    porMes.get(titulo).push(p);
+  });
+  porMes.forEach((lista, titulo) => {
+    html += `<optgroup label="${escapeHtml(titulo)}">${lista.map(opt).join('')}</optgroup>`;
+  });
+  if (passados.length) html += `<optgroup label="Já realizados">${passados.map(opt).join('')}</optgroup>`;
+  return html;
+}
+
 function renderEventoSelects() {
-  const opts = state.eventos
-    .slice().reverse()
-    .map(ev => `<option value="${ev.id}">${escapeHtml(ev.nome)}</option>`).join('');
+  const anterior = state.eventoAtivoId;
+  const opts = buildEventoOptions();
   const scannerSelect = document.getElementById('evento-select');
   const confirmSelect = document.getElementById('confirm-evento');
-  scannerSelect.innerHTML = opts || '<option value="">Nenhum evento criado</option>';
-  confirmSelect.innerHTML = opts || '<option value="">Nenhum evento criado</option>';
+  scannerSelect.innerHTML = opts;
+  confirmSelect.innerHTML = opts;
   if (state.eventos.length) {
-    state.eventoAtivoId = scannerSelect.value || state.eventos[state.eventos.length - 1].id;
+    const existe = state.eventos.some(ev => ev.id === anterior);
+    // Mantém a escolha atual; senão usa o evento futuro mais próximo.
+    state.eventoAtivoId = existe ? anterior : state.eventoPadraoId;
     scannerSelect.value = state.eventoAtivoId;
+    confirmSelect.value = state.eventoAtivoId;
   }
   renderListaEsperada();
 }
@@ -343,14 +394,33 @@ function stopScanner() {
 }
 
 function onScanSuccess(decodedText) {
+  if (state.pendingScan) return;
   const codigo = decodedText.trim();
+  const agora = Date.now();
+  // Evita ler de novo o mesmo código que ainda está na frente da câmera.
+  if (codigo === state.ultimoCodigo && agora < state.ignorarAte) return;
   const produto = state.produtos.find(p => p.codigo === codigo);
   if (!produto) {
-    toast(`QR não reconhecido: ${codigo}`, true);
+    state.ultimoCodigo = codigo;
+    state.ignorarAte = agora + 3000;
+    toast(`Código não reconhecido: ${codigo}`, true);
     return;
   }
-  stopScanner();
+  // Pausa (sem desligar a câmera) enquanto a confirmação está aberta.
+  try { state.html5QrCode.pause(true); } catch (e) {}
   abrirConfirmacao(produto);
+}
+
+// Volta ao scanner com a câmera já ligada, pronta para o próximo item.
+function voltarAoScanner() {
+  state.pendingScan = null;
+  state.ignorarAte = Date.now() + 2000;
+  showScreen('screen-scanner');
+  if (state.scanning) {
+    try { state.html5QrCode.resume(); } catch (e) { startScanner(); }
+  } else {
+    startScanner();
+  }
 }
 
 /* ================= CONFIRMAÇÃO ================= */
@@ -375,11 +445,7 @@ function abrirConfirmacao(produto) {
   showScreen('screen-confirmacao');
 }
 
-document.getElementById('btn-cancelar-confirm').addEventListener('click', () => {
-  state.pendingScan = null;
-  showScreen('screen-scanner');
-  startScanner();
-});
+document.getElementById('btn-cancelar-confirm').addEventListener('click', voltarAoScanner);
 
 document.getElementById('btn-saida').addEventListener('click', () => confirmarBipagem('saida'));
 document.getElementById('btn-retorno').addEventListener('click', () => confirmarBipagem('retorno'));
@@ -389,19 +455,28 @@ async function confirmarBipagem(tipo) {
   if (!produto) return;
   const eventoId = document.getElementById('confirm-evento').value;
   const evento = state.eventos.find(ev => ev.id === eventoId);
+  const rotulo = tipo === 'saida' ? 'Saída' : 'Retorno';
+
+  // Volta a bipar na hora; o envio ao Sheets segue em segundo plano.
+  state.ultimoCodigo = produto.codigo;
+  state.eventoAtivoId = eventoId;
+  document.getElementById('evento-select').value = eventoId;
+  state.scannedCodesThisSession.add(produto.codigo);
+  renderListaEsperada();
+  voltarAoScanner();
+  toast(`Registrando ${rotulo.toLowerCase()}: ${produto.nome}…`);
+
   try {
     await Api.bipar(produto.codigo, tipo, evento ? evento.nome : '');
-    toast(`${tipo === 'saida' ? 'Saída' : 'Retorno'} registrada: ${produto.nome}`);
-    state.scannedCodesThisSession.add(produto.codigo);
-    state.pendingScan = null;
-    await loadAll();
-    showScreen('screen-scanner');
-    document.getElementById('evento-select').value = eventoId;
-    state.eventoAtivoId = eventoId;
-    renderListaEsperada();
-    startScanner();
+    toast(`✓ ${rotulo} registrada: ${produto.nome}`);
+    const [historico, status] = await Promise.all([Api.getHistorico(), Api.getStatus()]);
+    state.historico = historico;
+    state.status = status;
+    renderHistoricoEStatus();
   } catch (err) {
-    toast('Erro ao registrar: ' + err.message, true);
+    state.scannedCodesThisSession.delete(produto.codigo);
+    renderListaEsperada();
+    toast(`ERRO: ${rotulo} de "${produto.nome}" NÃO foi registrada. Bipe de novo. (${err.message})`, true);
   }
 }
 
