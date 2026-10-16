@@ -33,6 +33,12 @@ button { font-family: inherit; }
 .center { text-align: center; justify-content: center; }
 .left { text-align: left; }
 
+/* ---------- Barra de carregamento ---------- */
+.loadbar { position: fixed; top: 0; left: 0; right: 0; height: 3px; z-index: 70; overflow: hidden; opacity: 0; transition: opacity .2s; pointer-events: none; }
+.loadbar.on { opacity: 1; }
+.loadbar::after { content: ""; position: absolute; top: 0; bottom: 0; width: 40%; background: var(--orange); animation: carregando 1.1s ease-in-out infinite; }
+@keyframes carregando { from { left: -40%; } to { left: 100%; } }
+
 /* ---------- Barra superior + menu ---------- */
 .appbar {
   position: sticky; top: 0; z-index: 20;

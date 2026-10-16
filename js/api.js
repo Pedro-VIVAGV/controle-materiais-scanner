@@ -33,6 +33,7 @@ const Api = (() => {
     getEventos: () => get('eventos'),
     getHistorico: () => get('historico'),
     getStatus: () => get('status'),
+    getTudo: () => get('tudo'),
 
     salvarProduto: (produto) => post('salvarProduto', { produto }),
     excluirProduto: (codigo) => post('excluirProduto', { codigo }),

@@ -46,6 +46,8 @@ function doGet(e) {
         return respond_({ ok: true, data: getHistorico_() });
       case 'status':
         return respond_({ ok: true, data: getStatus_() });
+      case 'tudo':
+        return respond_({ ok: true, data: getTudo_() });
       default:
         return respond_({ ok: false, error: 'Ação inválida: ' + action });
     }
@@ -282,9 +284,24 @@ function registrarBipagem_(codigo, tipo, evento) {
 
 /* ---------------- Status calculado ---------------- */
 
-function getStatus_() {
+// Tudo numa chamada só (o app abre bem mais rápido do que com 5 requisições).
+function getTudo_() {
   var produtos = getProdutos_();
   var historico = getHistorico_();
+  return {
+    produtos: produtos,
+    templates: getTemplatesGrouped_(),
+    eventos: getEventos_(),
+    historico: historico,
+    status: calcStatus_(produtos, historico)
+  };
+}
+
+function getStatus_() {
+  return calcStatus_(getProdutos_(), getHistorico_());
+}
+
+function calcStatus_(produtos, historico) {
   var ultimo = {};
   historico.forEach(function (h) {
     var atual = ultimo[h.codigoItem];

@@ -50,23 +50,53 @@ function toast(msg, isError) {
 
 /* ---------------- Carregamento inicial ---------------- */
 
-async function loadAll() {
+const CACHE_KEY = 'controle-materiais:dados:v1';
+
+function lerCache() {
+  try { return JSON.parse(localStorage.getItem(CACHE_KEY)); } catch (e) { return null; }
+}
+function gravarCache(dados) {
+  try { localStorage.setItem(CACHE_KEY, JSON.stringify(dados)); } catch (e) {}
+}
+
+function aplicarDados(d) {
+  state.produtos = d.produtos || [];
+  state.templates = d.templates || {};
+  state.eventos = d.eventos || [];
+  state.historico = d.historico || [];
+  state.status = d.status || [];
+  renderProdutos();
+  renderTemplateSelectors();
+  escolherEventoInicial();
+  renderEventoCards();
+  renderHistoricoEStatus();
+}
+
+// Uma chamada só ao Apps Script. Se o backend ainda for a versão antiga (sem 'tudo'),
+// cai para as 5 chamadas separadas.
+async function buscarDados() {
   try {
+    return await Api.getTudo();
+  } catch (err) {
+    if (!/inv[aá]lida/i.test(err.message)) throw err;
     const [produtos, templates, eventos, historico, status] = await Promise.all([
       Api.getProdutos(), Api.getTemplates(), Api.getEventos(), Api.getHistorico(), Api.getStatus()
     ]);
-    state.produtos = produtos;
-    state.templates = templates;
-    state.eventos = eventos;
-    state.historico = historico;
-    state.status = status;
-    renderProdutos();
-    renderTemplateSelectors();
-    escolherEventoInicial();
-    renderEventoCards();
-    renderHistoricoEStatus();
+    return { produtos, templates, eventos, historico, status };
+  }
+}
+
+// Mostra na hora o que foi salvo da última vez e atualiza por trás.
+async function loadAll() {
+  $('loadbar').classList.add('on');
+  try {
+    const dados = await buscarDados();
+    gravarCache(dados);
+    aplicarDados(dados);
   } catch (err) {
     toast('Erro ao carregar dados: ' + err.message, true);
+  } finally {
+    $('loadbar').classList.remove('on');
   }
 }
 
@@ -334,7 +364,8 @@ async function excluirProduto(codigo) {
 function renderTemplateSelectors() {
   $('t-item-select').innerHTML = state.produtos.map(p => `<option value="${escapeHtml(p.codigo)}">${escapeHtml(p.nome)} (${escapeHtml(p.codigo)})</option>`).join('');
   $('ev-template').innerHTML = Object.keys(state.templates).map(t => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
-  carregarTemplateParaEdicao();
+  // Não apaga o que o usuário está montando se os dados chegarem de novo.
+  if (!state.templateItensEmEdicao.length) carregarTemplateParaEdicao();
 }
 
 $('t-nome').addEventListener('change', carregarTemplateParaEdicao);
@@ -620,5 +651,7 @@ function formatDate(v) {
 
 renderListaEditavel('template-itens-lista', state.templateItensEmEdicao);
 renderListaEditavel('evento-itens-lista', state.eventoItensEmEdicao);
-renderEventoCards();
+const cacheInicial = lerCache();
+if (cacheInicial) aplicarDados(cacheInicial);
+else renderEventoCards();
 loadAll();
