@@ -78,6 +78,9 @@ function doPost(e) {
       case 'atualizarEvento':
         result = atualizarEvento_(body.eventoId, body.itens);
         break;
+      case 'importarEventos':
+        result = importarEventos_(body.eventos);
+        break;
       case 'bipar':
         result = registrarBipagem_(body.codigo, body.tipo, body.evento);
         break;
@@ -212,6 +215,26 @@ function criarEvento_(nome, templateUsado, itens) {
   var id = Utilities.getUuid();
   sheet.appendRow([id, nome, templateUsado || '', new Date(), JSON.stringify(itens || [])]);
   return { id: id, nome: nome };
+}
+
+// Importa eventos vindos do script local (planilha de datas). Cada evento tem um id
+// determinístico: se já existe na aba Eventos, é ignorado (preserva edições de itens).
+// Se o evento traz um template conhecido, a lista de itens é copiada dele.
+function importarEventos_(eventos) {
+  var sheet = getSheet_(SHEET_EVENTOS);
+  var existentes = {};
+  getEventos_().forEach(function (ev) { existentes[ev.id] = true; });
+  var templates = getTemplatesGrouped_();
+  var criados = 0, ignorados = 0;
+  (eventos || []).forEach(function (ev) {
+    if (!ev.id || !ev.nome) return;
+    if (existentes[ev.id]) { ignorados++; return; }
+    var itens = (ev.templateUsado && templates[ev.templateUsado]) ? templates[ev.templateUsado] : [];
+    sheet.appendRow([ev.id, ev.nome, ev.templateUsado || '', new Date(), JSON.stringify(itens)]);
+    existentes[ev.id] = true;
+    criados++;
+  });
+  return { criados: criados, ignorados: ignorados };
 }
 
 function atualizarEvento_(eventoId, itens) {
