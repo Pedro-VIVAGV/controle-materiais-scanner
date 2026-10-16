@@ -6,23 +6,29 @@ const state = {
   historico: [],
   status: [],
   eventoAtivoId: null,
+  eventoPadraoId: null,
   scannedCodesThisSession: new Set(),
   pendingScan: null,  // produto lido aguardando confirmação
-  templateItensEmEdicao: [], // itens sendo montados no form de template
+  ultimoCodigo: null,
+  ignorarAte: 0,
+  templateItensEmEdicao: [],
   eventoItensEmEdicao: [],
-  eventoEmEdicaoId: null,
   html5QrCode: null,
   scanning: false
 };
+
+const $ = (id) => document.getElementById(id);
 
 /* ---------------- Navegação ---------------- */
 
 function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-  document.getElementById(id).classList.add('active');
-  document.querySelectorAll('.nav-btn').forEach(b => b.classList.toggle('active', b.dataset.screen === id));
+  $(id).classList.add('active');
+  const menu = id === 'screen-confirmacao' ? 'screen-scanner' : id;
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.toggle('active', b.dataset.screen === menu));
   // A confirmação mantém a câmera ligada (pausada) para o próximo item.
   if (id !== 'screen-scanner' && id !== 'screen-confirmacao' && state.scanning) stopScanner();
+  window.scrollTo({ top: 0 });
 }
 
 document.querySelectorAll('.nav-btn').forEach(btn => {
@@ -34,12 +40,12 @@ document.querySelectorAll('.nav-btn').forEach(btn => {
 });
 
 function toast(msg, isError) {
-  const el = document.getElementById('toast');
+  const el = $('toast');
   el.textContent = msg;
+  el.classList.toggle('erro', !!isError);
   el.classList.remove('hidden');
-  el.style.background = isError ? '#991b1b' : '#1f2430';
   clearTimeout(toast._t);
-  toast._t = setTimeout(() => el.classList.add('hidden'), 3000);
+  toast._t = setTimeout(() => el.classList.add('hidden'), isError ? 6000 : 2500);
 }
 
 /* ---------------- Carregamento inicial ---------------- */
@@ -56,93 +62,259 @@ async function loadAll() {
     state.status = status;
     renderProdutos();
     renderTemplateSelectors();
-    renderEventoSelects();
+    escolherEventoInicial();
+    renderEventoCards();
     renderHistoricoEStatus();
   } catch (err) {
     toast('Erro ao carregar dados: ' + err.message, true);
   }
 }
 
+/* ================= EVENTOS (leitura do nome e exibição) ================= */
+
+const DIAS_SEMANA = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
+const MESES_CURTOS = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+
+// Eventos importados têm o nome "dd/mm/aaaa - Fundo - Tipo (Local) [Fornecedor]".
+// Eventos criados à mão não têm data nem esse formato.
+function parseEvento(ev) {
+  const nome = String(ev.nome || '');
+  const m = nome.match(/^(\d{2})\/(\d{2})\/(\d{4}) - (.*)$/);
+  if (!m) return { ev, data: null, tipo: nome, fundo: '', local: '', forn: [] };
+  const data = new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
+  let resto = m[4];
+  let forn = [];
+  const fm = resto.match(/\s*\[([^\]]*)\]\s*$/);
+  if (fm) { forn = fm[1].split('+').map(s => s.trim()).filter(Boolean); resto = resto.slice(0, fm.index); }
+  const sep = resto.indexOf(' - ');
+  const fundo = (sep >= 0 ? resto.slice(0, sep) : resto).replace(/_/g, ' ').trim();
+  let tipo = sep >= 0 ? resto.slice(sep + 3).trim() : '';
+  let local = '';
+  const lm = tipo.match(/^(.*?)\s*\((.*)\)\s*$/);
+  if (lm) { tipo = lm[1].trim(); local = lm[2].trim(); }
+  return { ev, data, tipo: tipo || 'Evento', fundo, local, forn };
+}
+
+// Nome curto para listas de status/histórico: "13/11 · Colação de Grau · FUNDO".
+function nomeCurto(nomeEvento) {
+  if (!nomeEvento) return '—';
+  const p = parseEvento({ nome: nomeEvento });
+  if (!p.data) return nomeEvento;
+  return `${String(p.data.getDate()).padStart(2, '0')}/${String(p.data.getMonth() + 1).padStart(2, '0')} · ${p.tipo} · ${p.fundo}`;
+}
+
+function dateBlockHtml(p) {
+  if (!p.data) return '<div class="date-block sem-data"><strong>•</strong><span>sem data</span></div>';
+  return `<div class="date-block"><strong>${String(p.data.getDate()).padStart(2, '0')}</strong>` +
+    `<span>${MESES_CURTOS[p.data.getMonth()]}</span><small>${DIAS_SEMANA[p.data.getDay()]}</small></div>`;
+}
+
+function fornChips(p) {
+  return p.forn.map(f => `<span class="chip ${f.toLowerCase() === 'viva' ? 'chip-orange' : 'chip-dark'}">${escapeHtml(f)}</span>`).join('');
+}
+
+function eventoCardHtml() {
+  const ev = state.eventos.find(e => e.id === state.eventoAtivoId);
+  if (!ev) {
+    return `<div class="ev-main"><div class="ev-vazio">Nenhum evento. Toque para escolher.</div></div>${chevron()}`;
+  }
+  const p = parseEvento(ev);
+  return `${dateBlockHtml(p)}<div class="ev-main"><div class="ev-tipo">${escapeHtml(p.tipo)}</div>` +
+    (p.fundo ? `<div class="ev-fundo">${escapeHtml(p.fundo)}</div>` : '') + `</div>${chevron()}`;
+}
+
+function chevron() {
+  return '<svg class="ev-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>';
+}
+
+function escolherEventoInicial() {
+  const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+  const itens = state.eventos.map(parseEvento);
+  const futuros = itens.filter(p => p.data && p.data >= hoje).sort((a, b) => a.data - b.data);
+  const manuais = itens.filter(p => !p.data);
+  const passados = itens.filter(p => p.data && p.data < hoje).sort((a, b) => b.data - a.data);
+  const primeiro = futuros[0] || manuais[manuais.length - 1] || passados[0];
+  state.eventoPadraoId = primeiro ? primeiro.ev.id : null;
+  const existe = state.eventos.some(ev => ev.id === state.eventoAtivoId);
+  if (!existe) state.eventoAtivoId = state.eventoPadraoId;
+}
+
+function renderEventoCards() {
+  const html = eventoCardHtml();
+  $('evento-card').innerHTML = html;
+  $('confirm-evento-card').innerHTML = html;
+  renderListaEsperada();
+}
+
+/* ---- Seletor de eventos (modal) ---- */
+
+function abrirPicker() {
+  $('picker-busca').value = '';
+  renderPicker();
+  $('picker').classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+  const sel = $('picker-list').querySelector('.picker-item.sel');
+  if (sel) sel.scrollIntoView({ block: 'center' });
+}
+
+function fecharPicker() {
+  $('picker').classList.add('hidden');
+  document.body.style.overflow = '';
+}
+
+function renderPicker() {
+  const termo = norm($('picker-busca').value);
+  const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+  const itens = state.eventos.map(parseEvento).filter(p => {
+    if (!termo) return true;
+    const data = p.data ? `${String(p.data.getDate()).padStart(2, '0')}/${String(p.data.getMonth() + 1).padStart(2, '0')}` : '';
+    return norm([p.tipo, p.fundo, p.local, p.forn.join(' '), data].join(' ')).includes(termo);
+  });
+  const manuais = itens.filter(p => !p.data).reverse();
+  const futuros = itens.filter(p => p.data && p.data >= hoje).sort((a, b) => a.data - b.data);
+  const passados = itens.filter(p => p.data && p.data < hoje).sort((a, b) => b.data - a.data);
+
+  const card = (p) => `
+    <button type="button" class="picker-item ${p.ev.id === state.eventoAtivoId ? 'sel' : ''}" data-id="${escapeHtml(p.ev.id)}">
+      ${dateBlockHtml(p)}
+      <div class="ev-main">
+        <div class="ev-tipo">${escapeHtml(p.tipo)}</div>
+        ${p.fundo ? `<div class="ev-fundo">${escapeHtml(p.fundo)}</div>` : ''}
+        ${p.local ? `<div class="ev-local">📍 ${escapeHtml(p.local)}</div>` : ''}
+        ${p.forn.length ? `<div class="chips">${fornChips(p)}</div>` : ''}
+      </div>
+    </button>`;
+
+  let html = '';
+  if (manuais.length) html += `<div class="picker-mes">Criados manualmente</div>${manuais.map(card).join('')}`;
+  let mesAtual = '';
+  futuros.forEach(p => {
+    const mes = p.data.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+    if (mes !== mesAtual) {
+      mesAtual = mes;
+      html += `<div class="picker-mes">${escapeHtml(mes.charAt(0).toUpperCase() + mes.slice(1))}</div>`;
+    }
+    html += card(p);
+  });
+  if (passados.length) html += `<div class="picker-mes">Já realizados</div>${passados.map(card).join('')}`;
+  $('picker-list').innerHTML = html || '<div class="vazio">Nenhum evento encontrado.</div>';
+}
+
+$('picker-busca').addEventListener('input', renderPicker);
+$('picker').addEventListener('click', (e) => {
+  if (e.target.closest('[data-close]')) return fecharPicker();
+  const item = e.target.closest('.picker-item');
+  if (!item) return;
+  if (state.eventoAtivoId !== item.dataset.id) {
+    state.eventoAtivoId = item.dataset.id;
+    state.scannedCodesThisSession.clear();
+  }
+  renderEventoCards();
+  fecharPicker();
+});
+$('evento-card').addEventListener('click', abrirPicker);
+$('confirm-evento-card').addEventListener('click', abrirPicker);
+
 /* ================= PRODUTOS ================= */
 
-const formProduto = document.getElementById('form-produto');
-const pCategoria = document.getElementById('p-categoria');
-const pContemField = document.getElementById('p-contem-field');
+const formProduto = $('form-produto');
+const pCategoria = $('p-categoria');
 
 pCategoria.addEventListener('change', updateContemVisibility);
 function updateContemVisibility() {
-  pContemField.classList.toggle('hidden', pCategoria.value === 'Avulso');
+  $('p-contem-field').classList.toggle('hidden', pCategoria.value === 'Avulso');
 }
 updateContemVisibility();
+
+function resetFormProduto() {
+  formProduto.reset();
+  $('produto-editando').value = '';
+  $('btn-cancelar-produto').classList.add('hidden');
+  $('produto-form-titulo').textContent = 'Novo produto';
+  $('produto-form-box').open = false;
+  updateContemVisibility();
+}
 
 formProduto.addEventListener('submit', async (e) => {
   e.preventDefault();
   const produto = {
-    codigo: document.getElementById('p-codigo').value.trim(),
-    nome: document.getElementById('p-nome').value.trim(),
+    codigo: $('p-codigo').value.trim(),
+    nome: $('p-nome').value.trim(),
     categoria: pCategoria.value,
-    contem: document.getElementById('p-contem').value.split(',').map(s => s.trim()).filter(Boolean),
-    quantidade: document.getElementById('p-quantidade').value.trim(),
-    retornoObrigatorio: document.getElementById('p-retorno').value
+    contem: $('p-contem').value.split(',').map(s => s.trim()).filter(Boolean),
+    quantidade: $('p-quantidade').value.trim(),
+    retornoObrigatorio: $('p-retorno').value
   };
   try {
     await Api.salvarProduto(produto);
     toast('Produto salvo.');
-    formProduto.reset();
-    document.getElementById('produto-editando').value = '';
-    document.getElementById('btn-cancelar-produto').classList.add('hidden');
-    updateContemVisibility();
+    resetFormProduto();
     await loadAll();
   } catch (err) {
     toast('Erro ao salvar produto: ' + err.message, true);
   }
 });
 
-document.getElementById('btn-cancelar-produto').addEventListener('click', () => {
-  formProduto.reset();
-  document.getElementById('produto-editando').value = '';
-  document.getElementById('btn-cancelar-produto').classList.add('hidden');
-  updateContemVisibility();
-});
+$('btn-cancelar-produto').addEventListener('click', resetFormProduto);
+$('produtos-busca').addEventListener('input', renderProdutos);
+
+function retornoChip(valor) {
+  const v = String(valor).toLowerCase();
+  if (v === 'sim') return '<span class="chip chip-red">Retorno obrigatório</span>';
+  if (v === 'parcial') return '<span class="chip chip-orange">Retorno parcial</span>';
+  return '<span class="chip chip-green">Consumível</span>';
+}
 
 function renderProdutos() {
-  const tbody = document.getElementById('produtos-tbody');
-  tbody.innerHTML = '';
-  state.produtos.forEach(p => {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td>${escapeHtml(p.codigo)}</td>
-      <td>${escapeHtml(p.nome)}</td>
-      <td>${escapeHtml(p.categoria)}</td>
-      <td>${escapeHtml(p.retornoObrigatorio)}</td>
-      <td>
-        <button data-edit="${p.codigo}">Editar</button>
-        <button data-del="${p.codigo}">Excluir</button>
-      </td>`;
-    tbody.appendChild(tr);
-  });
-
-  tbody.querySelectorAll('[data-edit]').forEach(btn => {
-    btn.addEventListener('click', () => editarProduto(btn.dataset.edit));
-  });
-  tbody.querySelectorAll('[data-del]').forEach(btn => {
-    btn.addEventListener('click', () => excluirProduto(btn.dataset.del));
-  });
+  const termo = norm($('produtos-busca').value);
+  const lista = state.produtos.filter(p => !termo || norm(`${p.nome} ${p.codigo} ${p.categoria}`).includes(termo));
+  $('produtos-count').textContent = `${state.produtos.length} ${state.produtos.length === 1 ? 'item' : 'itens'}`;
+  const ul = $('produtos-lista');
+  if (!lista.length) {
+    ul.innerHTML = `<li class="vazio">${state.produtos.length ? 'Nenhum produto encontrado.' : 'Nenhum produto cadastrado ainda.'}</li>`;
+    return;
+  }
+  ul.innerHTML = lista.map(p => `
+    <li class="item">
+      <div class="item-top">
+        <div>
+          <div class="item-nome">${escapeHtml(p.nome)}</div>
+          <div class="item-sub">Código ${escapeHtml(p.codigo)}${p.quantidade ? ' · Qtd ' + escapeHtml(String(p.quantidade)) : ''}</div>
+        </div>
+      </div>
+      <div class="chips">
+        <span class="chip chip-dark">${escapeHtml(p.categoria)}</span>
+        ${retornoChip(p.retornoObrigatorio)}
+        ${(p.contem || []).length ? `<span class="chip">Contém ${p.contem.length}</span>` : ''}
+      </div>
+      <div class="item-actions">
+        <button class="mini-btn" data-edit="${escapeHtml(p.codigo)}">Editar</button>
+        <button class="mini-btn danger" data-del="${escapeHtml(p.codigo)}">Excluir</button>
+      </div>
+    </li>`).join('');
 }
+
+$('produtos-lista').addEventListener('click', (e) => {
+  const ed = e.target.closest('[data-edit]');
+  const del = e.target.closest('[data-del]');
+  if (ed) editarProduto(ed.dataset.edit);
+  if (del) excluirProduto(del.dataset.del);
+});
 
 function editarProduto(codigo) {
   const p = state.produtos.find(x => x.codigo === codigo);
   if (!p) return;
-  document.getElementById('produto-editando').value = p.codigo;
-  document.getElementById('p-codigo').value = p.codigo;
-  document.getElementById('p-nome').value = p.nome;
-  document.getElementById('p-categoria').value = p.categoria;
-  document.getElementById('p-contem').value = (p.contem || []).join(',');
-  document.getElementById('p-quantidade').value = p.quantidade;
-  document.getElementById('p-retorno').value = p.retornoObrigatorio;
-  document.getElementById('btn-cancelar-produto').classList.remove('hidden');
+  $('produto-editando').value = p.codigo;
+  $('p-codigo').value = p.codigo;
+  $('p-nome').value = p.nome;
+  $('p-categoria').value = p.categoria;
+  $('p-contem').value = (p.contem || []).join(',');
+  $('p-quantidade').value = p.quantidade;
+  $('p-retorno').value = p.retornoObrigatorio;
+  $('btn-cancelar-produto').classList.remove('hidden');
+  $('produto-form-titulo').textContent = 'Editar produto';
+  $('produto-form-box').open = true;
   updateContemVisibility();
-  showScreen('screen-produtos');
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -160,97 +332,80 @@ async function excluirProduto(codigo) {
 /* ================= TEMPLATES ================= */
 
 function renderTemplateSelectors() {
-  const itemSelect = document.getElementById('t-item-select');
-  itemSelect.innerHTML = state.produtos.map(p => `<option value="${p.codigo}">${escapeHtml(p.nome)} (${p.codigo})</option>`).join('');
-
-  const evTemplate = document.getElementById('ev-template');
-  evTemplate.innerHTML = Object.keys(state.templates).map(t => `<option value="${t}">${t}</option>`).join('');
+  $('t-item-select').innerHTML = state.produtos.map(p => `<option value="${escapeHtml(p.codigo)}">${escapeHtml(p.nome)} (${escapeHtml(p.codigo)})</option>`).join('');
+  $('ev-template').innerHTML = Object.keys(state.templates).map(t => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
+  carregarTemplateParaEdicao();
 }
 
-document.getElementById('t-nome').addEventListener('change', carregarTemplateParaEdicao);
+$('t-nome').addEventListener('change', carregarTemplateParaEdicao);
 function carregarTemplateParaEdicao() {
-  const nome = document.getElementById('t-nome').value;
-  state.templateItensEmEdicao = (state.templates[nome] || []).map(i => ({ ...i }));
-  renderTemplateItensEdicao();
+  const nome = $('t-nome').value;
+  // Troca o conteúdo no mesmo array (o handler de remoção guarda essa referência).
+  state.templateItensEmEdicao.splice(0, state.templateItensEmEdicao.length,
+    ...(state.templates[nome] || []).map(i => ({ ...i })));
+  renderListaEditavel('template-itens-lista', state.templateItensEmEdicao);
 }
-carregarTemplateParaEdicao();
 
-document.getElementById('btn-add-template-item').addEventListener('click', () => {
-  const select = document.getElementById('t-item-select');
-  const codigo = select.value;
+function renderListaEditavel(ulId, itens) {
+  const ul = $(ulId);
+  ul.innerHTML = itens.length
+    ? itens.map((item, idx) => `<li><span><strong>${escapeHtml(String(item.quantidade))}×</strong> ${escapeHtml(item.nome)}</span><button data-idx="${idx}">remover</button></li>`).join('')
+    : '<li class="hint">Nenhum item na lista.</li>';
+}
+
+function ligarRemocao(ulId, itens) {
+  $(ulId).addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-idx]');
+    if (!b) return;
+    itens.splice(Number(b.dataset.idx), 1);
+    renderListaEditavel(ulId, itens);
+  });
+}
+ligarRemocao('template-itens-lista', state.templateItensEmEdicao);
+ligarRemocao('evento-itens-lista', state.eventoItensEmEdicao);
+
+$('btn-add-template-item').addEventListener('click', () => {
+  const codigo = $('t-item-select').value;
   const produto = state.produtos.find(p => p.codigo === codigo);
   if (!produto) { toast('Cadastre produtos antes de montar o template.', true); return; }
-  const qtd = document.getElementById('t-item-qtd').value.trim() || '1';
+  const qtd = $('t-item-qtd').value.trim() || '1';
   state.templateItensEmEdicao.push({ codigo, nome: produto.nome, quantidade: qtd });
-  document.getElementById('t-item-qtd').value = '';
-  renderTemplateItensEdicao();
+  $('t-item-qtd').value = '';
+  renderListaEditavel('template-itens-lista', state.templateItensEmEdicao);
 });
 
-function renderTemplateItensEdicao() {
-  const ul = document.getElementById('template-itens-lista');
-  ul.innerHTML = '';
-  state.templateItensEmEdicao.forEach((item, idx) => {
-    const li = document.createElement('li');
-    li.innerHTML = `<span>${escapeHtml(item.nome)} — ${escapeHtml(String(item.quantidade))}</span><button data-idx="${idx}">remover</button>`;
-    ul.appendChild(li);
-  });
-  ul.querySelectorAll('button').forEach(btn => {
-    btn.addEventListener('click', () => {
-      state.templateItensEmEdicao.splice(Number(btn.dataset.idx), 1);
-      renderTemplateItensEdicao();
-    });
-  });
-}
-
-document.getElementById('btn-salvar-template').addEventListener('click', async () => {
-  const nome = document.getElementById('t-nome').value;
+$('btn-salvar-template').addEventListener('click', async () => {
+  const nome = $('t-nome').value;
   try {
     await Api.salvarTemplate(nome, state.templateItensEmEdicao);
     toast('Template salvo.');
     await loadAll();
-    carregarTemplateParaEdicao();
   } catch (err) {
     toast('Erro ao salvar template: ' + err.message, true);
   }
 });
 
-/* ---- Criar evento a partir de template ---- */
+/* ---- Criar evento manual a partir de template ---- */
 
-document.getElementById('btn-carregar-template-evento').addEventListener('click', () => {
-  const templateNome = document.getElementById('ev-template').value;
-  state.eventoItensEmEdicao = (state.templates[templateNome] || []).map(i => ({ ...i }));
-  state.eventoEmEdicaoId = null;
-  renderEventoItensEdicao();
-  document.getElementById('btn-salvar-evento').classList.remove('hidden');
+$('btn-carregar-template-evento').addEventListener('click', () => {
+  const templateNome = $('ev-template').value;
+  state.eventoItensEmEdicao.splice(0, state.eventoItensEmEdicao.length,
+    ...(state.templates[templateNome] || []).map(i => ({ ...i })));
+  renderListaEditavel('evento-itens-lista', state.eventoItensEmEdicao);
+  $('btn-salvar-evento').classList.remove('hidden');
 });
 
-function renderEventoItensEdicao() {
-  const ul = document.getElementById('evento-itens-lista');
-  ul.innerHTML = '';
-  state.eventoItensEmEdicao.forEach((item, idx) => {
-    const li = document.createElement('li');
-    li.innerHTML = `<span>${escapeHtml(item.nome)} — ${escapeHtml(String(item.quantidade))}</span><button data-idx="${idx}">remover</button>`;
-    ul.appendChild(li);
-  });
-  ul.querySelectorAll('button').forEach(btn => {
-    btn.addEventListener('click', () => {
-      state.eventoItensEmEdicao.splice(Number(btn.dataset.idx), 1);
-      renderEventoItensEdicao();
-    });
-  });
-}
-
-document.getElementById('btn-salvar-evento').addEventListener('click', async () => {
-  const nome = document.getElementById('ev-nome').value.trim();
-  const templateUsado = document.getElementById('ev-template').value;
+$('btn-salvar-evento').addEventListener('click', async () => {
+  const nome = $('ev-nome').value.trim();
+  const templateUsado = $('ev-template').value;
   if (!nome) { toast('Dê um nome ao evento.', true); return; }
   try {
     await Api.criarEvento(nome, templateUsado, state.eventoItensEmEdicao);
     toast('Evento criado.');
-    document.getElementById('ev-nome').value = '';
-    state.eventoItensEmEdicao = [];
-    renderEventoItensEdicao();
-    document.getElementById('btn-salvar-evento').classList.add('hidden');
+    $('ev-nome').value = '';
+    state.eventoItensEmEdicao.length = 0;
+    renderListaEditavel('evento-itens-lista', state.eventoItensEmEdicao);
+    $('btn-salvar-evento').classList.add('hidden');
     await loadAll();
     showScreen('screen-scanner');
   } catch (err) {
@@ -258,104 +413,40 @@ document.getElementById('btn-salvar-evento').addEventListener('click', async () 
   }
 });
 
-/* ================= EVENTO ATIVO / SCANNER ================= */
-
-const DIAS_SEMANA = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
-
-// Eventos importados têm o nome "dd/mm/aaaa - Fundo - Tipo (Local) [Fornecedor]".
-// Extrai data e rótulo curto; eventos criados à mão não têm data.
-function parseEvento(ev) {
-  const m = String(ev.nome).match(/^(\d{2})\/(\d{2})\/(\d{4}) - (.*)$/);
-  if (!m) return { ev, data: null, label: ev.nome };
-  const data = new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
-  const resto = m[4].replace(/\s*\[[^\]]*\]\s*$/, '');
-  const sep = resto.indexOf(' - ');
-  const fundo = (sep >= 0 ? resto.slice(0, sep) : resto).replace(/_/g, ' ').trim();
-  const tipo = (sep >= 0 ? resto.slice(sep + 3) : '').replace(/\s*\(.*\)\s*$/, '').trim();
-  const dia = `${m[1]}/${m[2]} ${DIAS_SEMANA[data.getDay()]}`;
-  return { ev, data, label: tipo ? `${dia} · ${tipo} · ${fundo}` : `${dia} · ${fundo}` };
-}
-
-function buildEventoOptions() {
-  if (!state.eventos.length) return '<option value="">Nenhum evento criado</option>';
-  const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
-  const itens = state.eventos.map(parseEvento);
-  const opt = p => `<option value="${p.ev.id}">${escapeHtml(p.label)}</option>`;
-
-  const manuais = itens.filter(p => !p.data).reverse();
-  const futuros = itens.filter(p => p.data && p.data >= hoje).sort((a, b) => a.data - b.data);
-  const passados = itens.filter(p => p.data && p.data < hoje).sort((a, b) => b.data - a.data);
-
-  // Escolha inicial: o evento futuro mais próximo.
-  state.eventoPadraoId = (futuros[0] || manuais[0] || passados[0]).ev.id;
-  let html = '';
-  if (manuais.length) html += `<optgroup label="Criados manualmente">${manuais.map(opt).join('')}</optgroup>`;
-  const porMes = new Map();
-  futuros.forEach(p => {
-    const mes = p.data.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
-    const titulo = mes.charAt(0).toUpperCase() + mes.slice(1);
-    if (!porMes.has(titulo)) porMes.set(titulo, []);
-    porMes.get(titulo).push(p);
-  });
-  porMes.forEach((lista, titulo) => {
-    html += `<optgroup label="${escapeHtml(titulo)}">${lista.map(opt).join('')}</optgroup>`;
-  });
-  if (passados.length) html += `<optgroup label="Já realizados">${passados.map(opt).join('')}</optgroup>`;
-  return html;
-}
-
-function renderEventoSelects() {
-  const anterior = state.eventoAtivoId;
-  const opts = buildEventoOptions();
-  const scannerSelect = document.getElementById('evento-select');
-  const confirmSelect = document.getElementById('confirm-evento');
-  scannerSelect.innerHTML = opts;
-  confirmSelect.innerHTML = opts;
-  if (state.eventos.length) {
-    const existe = state.eventos.some(ev => ev.id === anterior);
-    // Mantém a escolha atual; senão usa o evento futuro mais próximo.
-    state.eventoAtivoId = existe ? anterior : state.eventoPadraoId;
-    scannerSelect.value = state.eventoAtivoId;
-    confirmSelect.value = state.eventoAtivoId;
-  }
-  renderListaEsperada();
-}
-
-document.getElementById('evento-select').addEventListener('change', (e) => {
-  state.eventoAtivoId = e.target.value;
-  state.scannedCodesThisSession.clear();
-  renderListaEsperada();
-});
+/* ================= SCANNER ================= */
 
 function renderListaEsperada() {
-  const box = document.getElementById('lista-esperada');
-  const ul = document.getElementById('expected-items');
+  const box = $('lista-esperada');
+  const ul = $('expected-items');
   const evento = state.eventos.find(ev => ev.id === state.eventoAtivoId);
   if (!evento || !evento.itens || !evento.itens.length) {
     box.classList.add('hidden');
     return;
   }
   box.classList.remove('hidden');
-  ul.innerHTML = '';
-  evento.itens.forEach(item => {
-    const li = document.createElement('li');
-    const foiLido = state.scannedCodesThisSession.has(item.codigo);
-    li.className = foiLido ? 'scanned' : '';
-    li.innerHTML = `<span>${escapeHtml(item.nome)}</span><span>${escapeHtml(String(item.quantidade))}</span>`;
-    ul.appendChild(li);
-  });
+  const lidos = evento.itens.filter(i => state.scannedCodesThisSession.has(i.codigo)).length;
+  $('expected-progress').textContent = `${lidos}/${evento.itens.length} conferidos`;
+  ul.innerHTML = evento.itens.map(item => {
+    const lido = state.scannedCodesThisSession.has(item.codigo);
+    return `<li class="${lido ? 'scanned' : ''}"><span class="check">✓</span>` +
+      `<span class="nome">${escapeHtml(item.nome)}</span><span class="chip">${escapeHtml(String(item.quantidade))}×</span></li>`;
+  }).join('');
 }
 
-/* ---- Câmera QR ---- */
-
-const btnToggleScan = document.getElementById('btn-toggle-scan');
+const btnToggleScan = $('btn-toggle-scan');
 btnToggleScan.addEventListener('click', () => {
   if (state.scanning) stopScanner(); else startScanner();
 });
 
+function setCameraUi(ligada) {
+  state.scanning = ligada;
+  btnToggleScan.textContent = ligada ? 'Desligar câmera' : 'Ligar câmera';
+  $('camera-box').classList.toggle('on', ligada);
+}
+
 function startScanner() {
   if (!state.eventoAtivoId) {
-    toast('Crie e selecione um evento antes de bipar.', true);
+    toast('Escolha um evento antes de bipar.', true);
     return;
   }
   const F = Html5QrcodeSupportedFormats;
@@ -372,24 +463,17 @@ function startScanner() {
     { facingMode: 'environment' },
     config,
     onScanSuccess,
-    () => {} // erro de frame sem QR, ignorar
-  ).then(() => {
-    state.scanning = true;
-    btnToggleScan.textContent = 'Parar câmera';
-  }).catch(err => {
+    () => {} // frame sem código, ignorar
+  ).then(() => setCameraUi(true)).catch(err => {
     toast('Não foi possível abrir a câmera: ' + err, true);
   });
 }
 
 function stopScanner() {
   if (state.html5QrCode && state.scanning) {
-    state.html5QrCode.stop().then(() => {
-      state.scanning = false;
-      btnToggleScan.textContent = 'Iniciar câmera';
-    }).catch(() => {});
+    state.html5QrCode.stop().then(() => setCameraUi(false)).catch(() => {});
   } else {
-    state.scanning = false;
-    btnToggleScan.textContent = 'Iniciar câmera';
+    setCameraUi(false);
   }
 }
 
@@ -427,40 +511,38 @@ function voltarAoScanner() {
 
 function abrirConfirmacao(produto) {
   state.pendingScan = produto;
-  document.getElementById('confirm-nome').textContent = produto.nome;
-  document.getElementById('confirm-detalhes').textContent =
-    `Código: ${produto.codigo} · Categoria: ${produto.categoria} · Qtd: ${produto.quantidade || '-'}`;
-  const flag = document.getElementById('confirm-retorno-flag');
-  if (String(produto.retornoObrigatorio).toLowerCase() === 'sim') {
+  $('confirm-nome').textContent = produto.nome;
+  $('confirm-chips').innerHTML =
+    `<span class="chip">Código ${escapeHtml(produto.codigo)}</span>` +
+    `<span class="chip chip-dark">${escapeHtml(produto.categoria)}</span>` +
+    (produto.quantidade ? `<span class="chip">Qtd ${escapeHtml(String(produto.quantidade))}</span>` : '');
+  const flag = $('confirm-retorno-flag');
+  const v = String(produto.retornoObrigatorio).toLowerCase();
+  if (v === 'sim') {
     flag.textContent = 'Retorno obrigatório';
     flag.className = 'badge';
-  } else if (String(produto.retornoObrigatorio).toLowerCase() === 'parcial') {
+  } else if (v === 'parcial') {
     flag.textContent = 'Retorno parcial';
     flag.className = 'badge opcional';
   } else {
     flag.textContent = 'Retorno não obrigatório (consumível)';
     flag.className = 'badge opcional';
   }
-  document.getElementById('confirm-evento').value = state.eventoAtivoId || '';
   showScreen('screen-confirmacao');
 }
 
-document.getElementById('btn-cancelar-confirm').addEventListener('click', voltarAoScanner);
-
-document.getElementById('btn-saida').addEventListener('click', () => confirmarBipagem('saida'));
-document.getElementById('btn-retorno').addEventListener('click', () => confirmarBipagem('retorno'));
+$('btn-cancelar-confirm').addEventListener('click', voltarAoScanner);
+$('btn-saida').addEventListener('click', () => confirmarBipagem('saida'));
+$('btn-retorno').addEventListener('click', () => confirmarBipagem('retorno'));
 
 async function confirmarBipagem(tipo) {
   const produto = state.pendingScan;
   if (!produto) return;
-  const eventoId = document.getElementById('confirm-evento').value;
-  const evento = state.eventos.find(ev => ev.id === eventoId);
+  const evento = state.eventos.find(ev => ev.id === state.eventoAtivoId);
   const rotulo = tipo === 'saida' ? 'Saída' : 'Retorno';
 
   // Volta a bipar na hora; o envio ao Sheets segue em segundo plano.
   state.ultimoCodigo = produto.codigo;
-  state.eventoAtivoId = eventoId;
-  document.getElementById('evento-select').value = eventoId;
   state.scannedCodesThisSession.add(produto.codigo);
   renderListaEsperada();
   voltarAoScanner();
@@ -480,31 +562,40 @@ async function confirmarBipagem(tipo) {
   }
 }
 
-/* ================= HISTÓRICO / STATUS ================= */
+/* ================= STATUS / HISTÓRICO ================= */
 
 function renderHistoricoEStatus() {
   const alertas = state.status.filter(s => s.alerta);
   const esperados = state.status.filter(s => !s.alerta);
+  $('count-alertas').textContent = alertas.length;
+  $('count-esperados').textContent = esperados.length;
 
-  const ulAlertas = document.getElementById('lista-alertas');
-  ulAlertas.innerHTML = alertas.length
-    ? alertas.map(a => `<li class="alerta"><strong>${escapeHtml(a.nome)}</strong><br>Saiu no evento "${escapeHtml(a.evento || '-')}" em ${formatDate(a.desde)}</li>`).join('')
-    : '<li>Nenhum item pendente. 🎉</li>';
+  const itemStatus = (a, classe) => `
+    <li class="item ${classe}">
+      <div class="item-nome">${escapeHtml(a.nome)}</div>
+      <div class="item-sub">Saiu em ${formatDate(a.desde)}</div>
+      <div class="item-sub">${escapeHtml(nomeCurto(a.evento))}</div>
+    </li>`;
 
-  const ulEsperados = document.getElementById('lista-esperados');
-  ulEsperados.innerHTML = esperados.length
-    ? esperados.map(a => `<li><strong>${escapeHtml(a.nome)}</strong><br>Evento "${escapeHtml(a.evento || '-')}" em ${formatDate(a.desde)}</li>`).join('')
-    : '<li>Nenhum.</li>';
+  $('lista-alertas').innerHTML = alertas.length
+    ? alertas.map(a => itemStatus(a, 'alerta')).join('')
+    : '<li class="vazio">Nenhum item pendente. 🎉</li>';
+  $('lista-esperados').innerHTML = esperados.length
+    ? esperados.map(a => itemStatus(a, '')).join('')
+    : '<li class="vazio">Nenhum.</li>';
 
-  const tbody = document.getElementById('historico-tbody');
-  const rows = state.historico.slice().reverse().slice(0, 200);
-  tbody.innerHTML = rows.map(h => `
-    <tr>
-      <td>${formatDate(h.timestamp)}</td>
-      <td>${escapeHtml(h.nomeItem)}</td>
-      <td>${h.tipo === 'saida' ? 'Saída' : 'Retorno'}</td>
-      <td>${escapeHtml(h.evento || '-')}</td>
-    </tr>`).join('');
+  const rows = state.historico.slice().reverse().slice(0, 100);
+  $('historico-lista').innerHTML = rows.length
+    ? rows.map(h => `
+      <li class="item">
+        <div class="item-top">
+          <div class="item-nome">${escapeHtml(h.nomeItem)}</div>
+          <span class="chip ${h.tipo === 'saida' ? 'chip-orange' : 'chip-green'}">${h.tipo === 'saida' ? 'Saída' : 'Retorno'}</span>
+        </div>
+        <div class="item-sub">${formatDate(h.timestamp)}</div>
+        <div class="item-sub">${escapeHtml(nomeCurto(h.evento))}</div>
+      </li>`).join('')
+    : '<li class="vazio">Nenhuma bipagem registrada ainda.</li>';
 }
 
 /* ================= Utils ================= */
@@ -515,11 +606,19 @@ function escapeHtml(str) {
   }[c]));
 }
 
+// minúsculas e sem acento, para busca.
+function norm(texto) {
+  return String(texto || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+}
+
 function formatDate(v) {
   if (!v) return '-';
   const d = new Date(v);
   if (isNaN(d)) return String(v);
-  return d.toLocaleString('pt-BR');
+  return d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
 
+renderListaEditavel('template-itens-lista', state.templateItensEmEdicao);
+renderListaEditavel('evento-itens-lista', state.eventoItensEmEdicao);
+renderEventoCards();
 loadAll();

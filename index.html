@@ -3,102 +3,143 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-<title>Controle de Materiais</title>
-<link rel="stylesheet" href="css/style.css" />
+<meta name="theme-color" content="#F76E18" />
+<title>Controle de Materiais · VIVA</title>
+<link rel="icon" type="image/svg+xml" href="img/icone-viva.svg" />
+<link rel="stylesheet" href="css/style.css?v=4" />
 </head>
 <body>
 
-<header class="topbar">
-  <h1>Controle de Materiais</h1>
+<header class="appbar">
+  <div class="appbar-brand">
+    <img src="img/logo-viva.svg" alt="VIVA" class="logo" />
+    <span class="appbar-title">Controle de Materiais</span>
+  </div>
+  <nav class="topnav" aria-label="Menu principal">
+    <button data-screen="screen-scanner" class="nav-btn active">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2M4 12h16"/></svg>
+      <span>Scanner</span>
+    </button>
+    <button data-screen="screen-produtos" class="nav-btn">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 8 12 3 3 8v8l9 5 9-5V8ZM3 8l9 5 9-5M12 13v8"/></svg>
+      <span>Produtos</span>
+    </button>
+    <button data-screen="screen-templates" class="nav-btn">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg>
+      <span>Templates</span>
+    </button>
+    <button data-screen="screen-historico" class="nav-btn">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
+      <span>Status</span>
+    </button>
+  </nav>
 </header>
 
 <main id="app">
 
   <!-- SCANNER -->
   <section id="screen-scanner" class="screen active">
-    <div class="field">
-      <label for="evento-select">Evento ativo</label>
-      <select id="evento-select"></select>
+    <div class="field-label">Evento</div>
+    <button id="evento-card" class="evento-card" type="button"></button>
+
+    <div class="camera-box" id="camera-box">
+      <div id="reader"></div>
+      <div class="camera-placeholder" id="camera-placeholder">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2M4 12h16"/></svg>
+        <p>Câmera desligada</p>
+      </div>
     </div>
+    <p id="scanner-hint" class="hint center">Aponte para o QR code ou código de barras do item.</p>
+    <button id="btn-toggle-scan" class="btn btn-primary btn-lg">Ligar câmera</button>
 
-    <div id="reader"></div>
-    <p id="scanner-hint" class="hint">Aponte a câmera para o QR code ou código de barras do item.</p>
-    <button id="btn-toggle-scan" class="btn btn-primary">Iniciar câmera</button>
-
-    <div id="lista-esperada" class="expected-list hidden">
-      <h3>Lista esperada do evento</h3>
-      <ul id="expected-items"></ul>
+    <div id="lista-esperada" class="card hidden">
+      <div class="card-head">
+        <h3>Lista do evento</h3>
+        <span id="expected-progress" class="chip chip-orange"></span>
+      </div>
+      <ul id="expected-items" class="expected"></ul>
     </div>
   </section>
 
   <!-- CONFIRMAÇÃO -->
   <section id="screen-confirmacao" class="screen">
-    <div class="confirm-card">
+    <div class="card confirm-card">
+      <p class="eyebrow">Item lido</p>
       <h2 id="confirm-nome">—</h2>
-      <p id="confirm-detalhes" class="hint"></p>
+      <div id="confirm-chips" class="chips center"></div>
       <p id="confirm-retorno-flag" class="badge"></p>
 
-      <div class="field">
-        <label for="confirm-evento">Evento</label>
-        <select id="confirm-evento"></select>
-      </div>
+      <div class="field-label left">Evento</div>
+      <button id="confirm-evento-card" class="evento-card" type="button"></button>
 
       <div class="confirm-actions">
-        <button id="btn-saida" class="btn btn-saida">SAÍDA</button>
-        <button id="btn-retorno" class="btn btn-retorno">RETORNO</button>
+        <button id="btn-saida" class="btn btn-saida">
+          <span class="btn-big">SAÍDA</span><span class="btn-sub">está saindo</span>
+        </button>
+        <button id="btn-retorno" class="btn btn-retorno">
+          <span class="btn-big">RETORNO</span><span class="btn-sub">está voltando</span>
+        </button>
       </div>
-
-      <button id="btn-cancelar-confirm" class="btn btn-ghost">Cancelar / voltar a bipar</button>
+      <button id="btn-cancelar-confirm" class="btn btn-ghost">Cancelar e continuar bipando</button>
     </div>
   </section>
 
   <!-- PRODUTOS -->
   <section id="screen-produtos" class="screen">
-    <h2>Cadastro de Produtos</h2>
-    <form id="form-produto" class="card-form">
-      <input type="hidden" id="produto-editando" value="" />
-      <div class="field"><label>Código (QR)</label><input id="p-codigo" required /></div>
-      <div class="field"><label>Nome</label><input id="p-nome" required /></div>
-      <div class="field">
-        <label>Categoria</label>
-        <select id="p-categoria">
-          <option value="Caixote">Caixote</option>
-          <option value="Caixa">Caixa</option>
-          <option value="Bag">Bag</option>
-          <option value="Avulso">Item avulso</option>
-        </select>
-      </div>
-      <div class="field" id="p-contem-field">
-        <label>Contém (códigos separados por vírgula, se for container)</label>
-        <input id="p-contem" placeholder="ex: COD001,COD002" />
-      </div>
-      <div class="field"><label>Quantidade</label><input id="p-quantidade" placeholder="ex: 100un por caixa" /></div>
-      <div class="field">
-        <label>Retorno obrigatório</label>
-        <select id="p-retorno">
-          <option value="Sim">Sim</option>
-          <option value="Não">Não</option>
-          <option value="Parcial">Parcial</option>
-        </select>
-      </div>
-      <div class="form-actions">
-        <button type="submit" class="btn btn-primary">Salvar produto</button>
-        <button type="button" id="btn-cancelar-produto" class="btn btn-ghost hidden">Cancelar edição</button>
-      </div>
-    </form>
+    <div class="page-head">
+      <h2>Produtos</h2>
+      <span id="produtos-count" class="chip"></span>
+    </div>
 
-    <table class="data-table">
-      <thead><tr><th>Código</th><th>Nome</th><th>Categoria</th><th>Retorno</th><th></th></tr></thead>
-      <tbody id="produtos-tbody"></tbody>
-    </table>
+    <details id="produto-form-box" class="card form-box">
+      <summary><span class="plus">+</span> <span id="produto-form-titulo">Novo produto</span></summary>
+      <form id="form-produto" class="form">
+        <input type="hidden" id="produto-editando" value="" />
+        <div class="field"><label for="p-codigo">Código (igual ao da etiqueta)</label><input id="p-codigo" required autocomplete="off" /></div>
+        <div class="field"><label for="p-nome">Nome</label><input id="p-nome" required autocomplete="off" /></div>
+        <div class="row-2">
+          <div class="field">
+            <label for="p-categoria">Categoria</label>
+            <select id="p-categoria">
+              <option value="Caixote">Caixote</option>
+              <option value="Caixa">Caixa</option>
+              <option value="Bag">Bag</option>
+              <option value="Avulso">Item avulso</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="p-retorno">Retorno obrigatório</label>
+            <select id="p-retorno">
+              <option value="Sim">Sim</option>
+              <option value="Não">Não</option>
+              <option value="Parcial">Parcial</option>
+            </select>
+          </div>
+        </div>
+        <div class="field" id="p-contem-field">
+          <label for="p-contem">Contém (códigos separados por vírgula)</label>
+          <input id="p-contem" placeholder="ex: COD001,COD002" autocomplete="off" />
+        </div>
+        <div class="field"><label for="p-quantidade">Quantidade</label><input id="p-quantidade" placeholder="ex: 100un por caixa" autocomplete="off" /></div>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">Salvar produto</button>
+          <button type="button" id="btn-cancelar-produto" class="btn btn-ghost hidden">Cancelar</button>
+        </div>
+      </form>
+    </details>
+
+    <input id="produtos-busca" class="search" type="search" placeholder="Buscar produto ou código…" autocomplete="off" />
+    <ul id="produtos-lista" class="list"></ul>
   </section>
 
   <!-- TEMPLATES -->
   <section id="screen-templates" class="screen">
-    <h2>Templates de Evento</h2>
-    <form id="form-template" class="card-form">
+    <div class="page-head"><h2>Templates de evento</h2></div>
+
+    <div class="card">
+      <p class="hint">Lista padrão de materiais por tipo de evento. Eventos importados usam o template do mesmo tipo.</p>
       <div class="field">
-        <label>Tipo de evento</label>
+        <label for="t-nome">Tipo de evento</label>
         <select id="t-nome">
           <option>Pré-evento</option>
           <option>Colação de Grau</option>
@@ -109,65 +150,69 @@
         </select>
       </div>
       <div class="field">
-        <label>Adicionar item ao template</label>
-        <div class="inline-row">
-          <select id="t-item-select"></select>
-          <input id="t-item-qtd" placeholder="Quantidade" style="max-width:110px" />
-          <button type="button" id="btn-add-template-item" class="btn btn-secondary">Adicionar</button>
-        </div>
+        <label for="t-item-select">Adicionar item</label>
+        <select id="t-item-select"></select>
       </div>
-    </form>
+      <div class="inline-row">
+        <input id="t-item-qtd" placeholder="Quantidade" inputmode="numeric" />
+        <button type="button" id="btn-add-template-item" class="btn btn-secondary">Adicionar</button>
+      </div>
+      <ul id="template-itens-lista" class="edit-list"></ul>
+      <button id="btn-salvar-template" class="btn btn-primary">Salvar template</button>
+    </div>
 
-    <ul id="template-itens-lista" class="edit-list"></ul>
-    <button id="btn-salvar-template" class="btn btn-primary">Salvar template</button>
-
-    <hr />
-    <h3>Criar evento a partir de um template</h3>
-    <div class="card-form">
-      <div class="field"><label>Nome do evento</label><input id="ev-nome" placeholder="ex: Baile Turma XYZ 2026" /></div>
+    <div class="page-head"><h2>Criar evento manual</h2></div>
+    <div class="card">
+      <div class="field"><label for="ev-nome">Nome do evento</label><input id="ev-nome" placeholder="ex: Baile Turma XYZ 2026" autocomplete="off" /></div>
       <div class="field">
-        <label>Template base</label>
+        <label for="ev-template">Template base</label>
         <select id="ev-template"></select>
       </div>
-      <button type="button" id="btn-carregar-template-evento" class="btn btn-secondary">Puxar lista do template</button>
+      <button type="button" id="btn-carregar-template-evento" class="btn btn-secondary btn-block">Puxar lista do template</button>
+      <ul id="evento-itens-lista" class="edit-list"></ul>
+      <button id="btn-salvar-evento" class="btn btn-primary hidden">Salvar evento</button>
     </div>
-    <ul id="evento-itens-lista" class="edit-list"></ul>
-    <button id="btn-salvar-evento" class="btn btn-primary hidden">Salvar evento</button>
   </section>
 
-  <!-- HISTÓRICO / STATUS -->
+  <!-- STATUS -->
   <section id="screen-historico" class="screen">
-    <h2>Status atual</h2>
-    <div id="alertas-reais" class="status-block">
-      <h3 class="alert-title">⚠️ Retorno obrigatório pendente</h3>
-      <ul id="lista-alertas" class="status-list"></ul>
-    </div>
-    <div id="esperados-fora" class="status-block">
-      <h3>Fora, retorno não obrigatório (esperado)</h3>
-      <ul id="lista-esperados" class="status-list"></ul>
+    <div class="page-head"><h2>Status atual</h2></div>
+
+    <div class="stats">
+      <div class="stat stat-alert"><strong id="count-alertas">0</strong><span>Retorno pendente</span></div>
+      <div class="stat"><strong id="count-esperados">0</strong><span>Fora (sem retorno obrig.)</span></div>
     </div>
 
-    <h2>Histórico completo</h2>
-    <table class="data-table">
-      <thead><tr><th>Data/Hora</th><th>Item</th><th>Tipo</th><th>Evento</th></tr></thead>
-      <tbody id="historico-tbody"></tbody>
-    </table>
+    <h3 class="section-title alert-title">Retorno obrigatório pendente</h3>
+    <ul id="lista-alertas" class="list"></ul>
+
+    <h3 class="section-title">Fora, retorno não obrigatório</h3>
+    <ul id="lista-esperados" class="list"></ul>
+
+    <h3 class="section-title">Histórico recente</h3>
+    <ul id="historico-lista" class="list"></ul>
   </section>
 
 </main>
 
-<nav class="bottomnav">
-  <button data-screen="screen-scanner" class="nav-btn active">Scanner</button>
-  <button data-screen="screen-produtos" class="nav-btn">Produtos</button>
-  <button data-screen="screen-templates" class="nav-btn">Templates</button>
-  <button data-screen="screen-historico" class="nav-btn">Status</button>
-</nav>
+<!-- Seletor de eventos -->
+<div id="picker" class="sheet hidden" role="dialog" aria-modal="true" aria-label="Selecionar evento">
+  <div class="sheet-backdrop" data-close></div>
+  <div class="sheet-panel">
+    <div class="sheet-head">
+      <h3>Selecionar evento</h3>
+      <button class="icon-btn" data-close aria-label="Fechar">✕</button>
+    </div>
+    <input id="picker-busca" class="search" type="search" placeholder="Buscar por fundo, tipo ou data…" autocomplete="off" />
+    <div id="picker-list" class="picker-list"></div>
+  </div>
+</div>
 
 <div id="toast" class="toast hidden"></div>
 
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-<script src="js/config.js"></script>
-<script src="js/api.js"></script>
-<script src="js/app.js"></script>
+<script src="js/config.js?v=3"></script>
+<script src="js/api.js?v=3"></script>
+<script src="js/app.js?v=4"></script>
 </body>
 </html>
