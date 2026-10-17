@@ -144,8 +144,8 @@ function fornChips(p) {
   return p.forn.map(f => `<span class="chip ${f.toLowerCase() === 'viva' ? 'chip-orange' : 'chip-dark'}">${escapeHtml(f)}</span>`).join('');
 }
 
-function eventoCardHtml() {
-  const ev = state.eventos.find(e => e.id === state.eventoAtivoId);
+function eventoCardHtml(id) {
+  const ev = state.eventos.find(e => e.id === id);
   if (!ev) {
     return `<div class="ev-main"><div class="ev-vazio">Nenhum evento. Toque para escolher.</div></div>${chevron()}`;
   }
@@ -170,16 +170,22 @@ function escolherEventoInicial() {
   if (!existe) state.eventoAtivoId = state.eventoPadraoId;
 }
 
+// Evento usado na confirmação: o do retorno sugerido (de onde o item saiu) ou o ativo.
+function eventoDaConfirmacao() {
+  return state.eventoConfirmId || state.eventoAtivoId;
+}
+
 function renderEventoCards() {
-  const html = eventoCardHtml();
-  $('evento-card').innerHTML = html;
-  $('confirm-evento-card').innerHTML = html;
+  $('evento-card').innerHTML = eventoCardHtml(state.eventoAtivoId);
+  $('confirm-evento-card').innerHTML = eventoCardHtml(eventoDaConfirmacao());
   renderListaEsperada();
 }
 
 /* ---- Seletor de eventos (modal) ---- */
 
-function abrirPicker() {
+// alvo: 'scanner' muda o evento ativo; 'confirm' muda só o evento deste registro.
+function abrirPicker(alvo) {
+  state.pickerAlvo = alvo;
   $('picker-busca').value = '';
   renderPicker();
   $('picker').classList.remove('hidden');
@@ -209,8 +215,9 @@ function renderPicker() {
   // Mais antigos: só aparecem quando você pesquisa.
   const antigos = termo ? itens.filter(p => p.data && p.data < limiteRecentes).sort((a, b) => b.data - a.data) : [];
 
+  const marcado = state.pickerAlvo === 'confirm' ? eventoDaConfirmacao() : state.eventoAtivoId;
   const card = (p) => `
-    <button type="button" class="picker-item ${p.ev.id === state.eventoAtivoId ? 'sel' : ''}" data-id="${escapeHtml(p.ev.id)}">
+    <button type="button" class="picker-item ${p.ev.id === marcado ? 'sel' : ''}" data-id="${escapeHtml(p.ev.id)}">
       ${dateBlockHtml(p)}
       <div class="ev-main">
         <div class="ev-tipo">${escapeHtml(p.tipo)}</div>
@@ -241,15 +248,17 @@ $('picker').addEventListener('click', (e) => {
   if (e.target.closest('[data-close]')) return fecharPicker();
   const item = e.target.closest('.picker-item');
   if (!item) return;
-  if (state.eventoAtivoId !== item.dataset.id) {
+  if (state.pickerAlvo === 'confirm') {
+    state.eventoConfirmId = item.dataset.id;
+  } else if (state.eventoAtivoId !== item.dataset.id) {
     state.eventoAtivoId = item.dataset.id;
     state.scannedCodesThisSession.clear();
   }
   renderEventoCards();
   fecharPicker();
 });
-$('evento-card').addEventListener('click', abrirPicker);
-$('confirm-evento-card').addEventListener('click', abrirPicker);
+$('evento-card').addEventListener('click', () => abrirPicker('scanner'));
+$('confirm-evento-card').addEventListener('click', () => abrirPicker('confirm'));
 
 /* ================= PRODUTOS ================= */
 
@@ -535,6 +544,7 @@ function onScanSuccess(decodedText) {
 // Volta ao scanner com a câmera já ligada, pronta para o próximo item.
 function voltarAoScanner() {
   state.pendingScan = null;
+  state.eventoConfirmId = null;
   state.ignorarAte = Date.now() + 2000;
   showScreen('screen-scanner');
   if (state.scanning) {
@@ -565,8 +575,58 @@ function abrirConfirmacao(produto) {
     flag.textContent = 'Retorno não obrigatório (consumível)';
     flag.className = 'badge opcional';
   }
+  mostrarOpcoesDeTipo(produto);
   showScreen('screen-confirmacao');
 }
+
+// Último registro do item no histórico (o status atual é sempre calculado daqui).
+function ultimoRegistro(codigo) {
+  let ultimo = null;
+  state.historico.forEach(h => {
+    if (h.codigoItem !== codigo) return;
+    if (!ultimo || new Date(h.timestamp) >= new Date(ultimo.timestamp)) ultimo = h;
+  });
+  return ultimo;
+}
+
+// Item que saiu só pode voltar; item que voltou (ou nunca saiu) só pode sair.
+function mostrarOpcoesDeTipo(produto) {
+  const ult = ultimoRegistro(produto.codigo);
+  const fora = !!ult && ult.tipo === 'saida';
+  const estado = $('confirm-estado');
+  if (fora) {
+    estado.className = 'estado fora';
+    estado.innerHTML = `Este item está <strong>FORA</strong> desde ${formatDate(ult.timestamp)}` +
+      `<small>${escapeHtml(nomeCurto(ult.evento))}</small>`;
+  } else if (ult) {
+    estado.className = 'estado dentro';
+    estado.innerHTML = `Item de volta desde ${formatDate(ult.timestamp)}`;
+  } else {
+    estado.className = 'estado novo';
+    estado.textContent = 'Primeira movimentação deste item';
+  }
+  // Retorno é registrado no evento de onde o item saiu (se ele ainda estiver na lista).
+  const eventoDeOrigem = fora ? state.eventos.find(e => e.nome === ult.evento) : null;
+  state.eventoConfirmId = eventoDeOrigem ? eventoDeOrigem.id : null;
+  renderEventoCards();
+  const permitido = fora ? 'retorno' : 'saida';
+  const outro = fora ? 'saida' : 'retorno';
+  $('btn-saida').classList.toggle('hidden', permitido !== 'saida');
+  $('btn-retorno').classList.toggle('hidden', permitido !== 'retorno');
+  document.querySelector('.confirm-actions').classList.add('um');
+  const link = $('btn-outro-tipo');
+  link.classList.remove('hidden');
+  link.textContent = fora ? 'Esqueci o retorno antes: registrar SAÍDA mesmo assim'
+                          : 'Esqueci a saída antes: registrar RETORNO mesmo assim';
+  link.dataset.outro = outro;
+}
+
+$('btn-outro-tipo').addEventListener('click', (e) => {
+  // Saída de emergência: libera o botão do outro tipo (ex.: retorno que ninguém bipou).
+  $('btn-' + e.currentTarget.dataset.outro).classList.remove('hidden');
+  document.querySelector('.confirm-actions').classList.remove('um');
+  e.currentTarget.classList.add('hidden');
+});
 
 $('btn-cancelar-confirm').addEventListener('click', voltarAoScanner);
 $('btn-saida').addEventListener('click', () => confirmarBipagem('saida'));
@@ -575,12 +635,15 @@ $('btn-retorno').addEventListener('click', () => confirmarBipagem('retorno'));
 async function confirmarBipagem(tipo) {
   const produto = state.pendingScan;
   if (!produto) return;
-  const evento = state.eventos.find(ev => ev.id === state.eventoAtivoId);
+  const evento = state.eventos.find(ev => ev.id === eventoDaConfirmacao());
   const rotulo = tipo === 'saida' ? 'Saída' : 'Retorno';
 
   // Volta a bipar na hora; o envio ao Sheets segue em segundo plano.
   state.ultimoCodigo = produto.codigo;
   state.scannedCodesThisSession.add(produto.codigo);
+  // Registro provisório: o próximo bip do mesmo item já enxerga o novo estado.
+  const provisorio = { timestamp: new Date().toISOString(), codigoItem: produto.codigo, nomeItem: produto.nome, tipo, evento: evento ? evento.nome : '' };
+  state.historico.push(provisorio);
   renderListaEsperada();
   voltarAoScanner();
   toast(`Registrando ${rotulo.toLowerCase()}: ${produto.nome}…`);
@@ -593,6 +656,7 @@ async function confirmarBipagem(tipo) {
     state.status = status;
     renderHistoricoEStatus();
   } catch (err) {
+    state.historico = state.historico.filter(h => h !== provisorio);
     state.scannedCodesThisSession.delete(produto.codigo);
     renderListaEsperada();
     toast(`ERRO: ${rotulo} de "${produto.nome}" NÃO foi registrada. Bipe de novo. (${err.message})`, true);

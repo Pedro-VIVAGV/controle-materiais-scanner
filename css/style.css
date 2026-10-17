@@ -134,6 +134,13 @@ input:focus, select:focus { border-color: var(--orange); box-shadow: 0 0 0 3px r
 .btn-saida, .btn-retorno { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 20px 8px; color: #fff; }
 .btn-saida { background: var(--orange); }
 .btn-retorno { background: var(--green); }
+.confirm-actions.um { grid-template-columns: 1fr; }
+.btn-link { font-size: 13px; min-height: 40px; text-decoration: underline; }
+.estado { margin: 0 0 16px; padding: 10px 12px; border-radius: 12px; font-size: 13.5px; font-weight: 600; text-align: left; }
+.estado.fora { background: var(--red-soft); color: var(--red); }
+.estado.dentro { background: var(--green-soft); color: var(--green); }
+.estado.novo { background: #f1ebe5; color: var(--muted); }
+.estado small { display: block; font-weight: 600; opacity: .85; margin-top: 2px; }
 .btn-big { font-size: 20px; letter-spacing: .02em; }
 .btn-sub { font-size: 12px; font-weight: 600; opacity: .9; }
 .icon-btn { width: 40px; height: 40px; border-radius: 50%; border: none; background: #f1ebe5; color: var(--ink); font-size: 16px; cursor: pointer; }
