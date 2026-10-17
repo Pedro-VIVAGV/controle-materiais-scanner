@@ -3,7 +3,8 @@
 Regras:
 - Aba "Contatos", cabeçalho na linha 5, dados a partir da linha 6.
 - Só entram linhas cuja coluna Fornecedor é VIVA ou Luminous (Triunfo, Particular e demais ficam de fora).
-- Só eventos com Data Reservada >= hoje.
+- Só eventos com Data Reservada nos últimos 7 dias ou no futuro (o material do evento
+  de ontem ainda pode estar voltando).
 - Linhas com mesma data + fundo + local + tipo (VIVA e Luminous no mesmo evento) viram UM evento.
 - Eventos já importados antes não são duplicados.
 
@@ -29,6 +30,7 @@ PRIMEIRA_LINHA = 6
 # Colunas (0 = A). A planilha começa na coluna B.
 COL_CIDADE, COL_FORNECEDOR, COL_FUNDO, COL_DATA, COL_LOCAL, COL_EVENTO = 2, 3, 4, 5, 7, 9
 FORNECEDORES_OK = {"viva", "luminous"}
+DIAS_RECENTES = 7  # eventos que já passaram continuam sendo importados por 7 dias
 
 
 def norm(texto):
@@ -69,11 +71,12 @@ def api_url():
 def ler_eventos():
     wb = openpyxl.load_workbook(XLSX, data_only=True, read_only=True)
     hoje = datetime.datetime.combine(datetime.date.today(), datetime.time())
+    limite = hoje - datetime.timedelta(days=DIAS_RECENTES)
     grupos = {}
     for r in wb[ABA].iter_rows(min_row=PRIMEIRA_LINHA, values_only=True):
         r = list(r) + [None] * 12
         data = r[COL_DATA]
-        if not isinstance(data, datetime.datetime) or data < hoje:
+        if not isinstance(data, datetime.datetime) or data < limite:
             continue
         fornecedor = norm(r[COL_FORNECEDOR])
         if fornecedor not in FORNECEDORES_OK:
@@ -115,7 +118,7 @@ def enviar(eventos):
 def main():
     dry = "--dry-run" in sys.argv
     eventos = ler_eventos()
-    print(f"{len(eventos)} eventos (VIVA/Luminous, de hoje em diante).")
+    print(f"{len(eventos)} eventos (VIVA/Luminous, últimos 7 dias em diante).")
     if dry:
         for e in eventos:
             print(f"  [{e['templateUsado'] or 'sem template':<20}] {e['nome']}")

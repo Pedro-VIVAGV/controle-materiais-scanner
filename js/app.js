@@ -103,6 +103,7 @@ async function loadAll() {
 /* ================= EVENTOS (leitura do nome e exibição) ================= */
 
 const DIAS_SEMANA = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
+const DIAS_RECENTES = 7; // eventos passados continuam na lista por 7 dias
 const MESES_CURTOS = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 
 // Eventos importados têm o nome "dd/mm/aaaa - Fundo - Tipo (Local) [Fornecedor]".
@@ -200,9 +201,13 @@ function renderPicker() {
     const data = p.data ? `${String(p.data.getDate()).padStart(2, '0')}/${String(p.data.getMonth() + 1).padStart(2, '0')}` : '';
     return norm([p.tipo, p.fundo, p.local, p.forn.join(' '), data].join(' ')).includes(termo);
   });
+  const limiteRecentes = new Date(hoje); limiteRecentes.setDate(limiteRecentes.getDate() - DIAS_RECENTES);
   const manuais = itens.filter(p => !p.data).reverse();
   const futuros = itens.filter(p => p.data && p.data >= hoje).sort((a, b) => a.data - b.data);
-  const passados = itens.filter(p => p.data && p.data < hoje).sort((a, b) => b.data - a.data);
+  // Eventos que já passaram mas ainda podem ter material voltando (últimos 7 dias).
+  const recentes = itens.filter(p => p.data && p.data < hoje && p.data >= limiteRecentes).sort((a, b) => b.data - a.data);
+  // Mais antigos: só aparecem quando você pesquisa.
+  const antigos = termo ? itens.filter(p => p.data && p.data < limiteRecentes).sort((a, b) => b.data - a.data) : [];
 
   const card = (p) => `
     <button type="button" class="picker-item ${p.ev.id === state.eventoAtivoId ? 'sel' : ''}" data-id="${escapeHtml(p.ev.id)}">
@@ -216,6 +221,7 @@ function renderPicker() {
     </button>`;
 
   let html = '';
+  if (recentes.length) html += `<div class="picker-mes">Já aconteceram (últimos ${DIAS_RECENTES} dias) · material pode estar voltando</div>${recentes.map(card).join('')}`;
   if (manuais.length) html += `<div class="picker-mes">Criados manualmente</div>${manuais.map(card).join('')}`;
   let mesAtual = '';
   futuros.forEach(p => {
@@ -226,7 +232,7 @@ function renderPicker() {
     }
     html += card(p);
   });
-  if (passados.length) html += `<div class="picker-mes">Já realizados</div>${passados.map(card).join('')}`;
+  if (antigos.length) html += `<div class="picker-mes">Mais antigos</div>${antigos.map(card).join('')}`;
   $('picker-list').innerHTML = html || '<div class="vazio">Nenhum evento encontrado.</div>';
 }
 
