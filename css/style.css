@@ -267,6 +267,8 @@ input:focus, select:focus { border-color: var(--orange); box-shadow: 0 0 0 3px r
 .etq-lista input { width: 20px; min-height: 0; height: 20px; accent-color: var(--orange); flex: none; }
 .etq-lista small { color: var(--muted); }
 
+.etq-acoes { margin-bottom: 4px; }
+.etq-acoes .btn { width: 100%; }
 .etq-area { display: flex; flex-wrap: wrap; align-items: flex-start; background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; gap: 0; }
 .etq {
   --qr: 2.5cm;

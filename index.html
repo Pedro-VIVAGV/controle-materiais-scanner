@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#F76E18" />
 <title>Controle de Materiais · VIVA</title>
 <link rel="icon" type="image/svg+xml" href="img/icone-viva.svg" />
-<link rel="stylesheet" href="css/style.css?v=10" />
+<link rel="stylesheet" href="css/style.css?v=11" />
 </head>
 <body>
 
@@ -191,7 +191,10 @@
         <div id="etq-lista" class="etq-lista"></div>
       </details>
 
-      <button id="btn-imprimir" class="btn btn-primary">Imprimir etiquetas</button>
+      <div class="row-2 etq-acoes">
+        <button id="btn-pdf" class="btn btn-primary">Baixar PDF</button>
+        <button id="btn-imprimir" class="btn btn-secondary btn-block">Imprimir</button>
+      </div>
       <p class="hint">Na janela de impressão, deixe a escala em <strong>100% (tamanho real)</strong>, desligue "ajustar à página" e use papel adesivo.</p>
     </div>
 
@@ -278,8 +281,10 @@
 
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="js/config.js?v=3"></script>
 <script src="js/api.js?v=5"></script>
-<script src="js/app.js?v=10"></script>
+<script src="js/app.js?v=11"></script>
 </body>
 </html>

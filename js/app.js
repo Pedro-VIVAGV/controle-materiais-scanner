@@ -422,6 +422,71 @@ $('etq-lista').addEventListener('change', (e) => {
   renderEtiquetas();
   $('etq-lista').closest('details').open = true;
 });
+// Monta o PDF (A4) com as etiquetas marcadas, no tamanho escolhido. QR desenhado em vetor.
+function gerarPdfEtiquetas() {
+  const { jsPDF } = window.jspdf;
+  const itens = state.produtos.filter(p => !state.etqDesmarcados.has(p.codigo));
+  const qrCm = Number($('etq-tamanho').value);
+  const guias = $('etq-guias').value === '1';
+  const MM = 10; // 1 cm = 10 mm
+  const qr = qrCm * MM;
+  const larg = Math.max(34, qr + 10);        // mesma regra da tela: máx(3,4cm; QR + 1cm)
+  const pad = 3;
+  const margem = 8;
+
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  const nomeLinhas = (nome) => doc.setFont('helvetica', 'normal').setFontSize(7.5).splitTextToSize(String(nome), larg - 2 * pad).slice(0, 3);
+  const maxLinhas = Math.max(1, ...itens.map(p => nomeLinhas(p.nome).length));
+  const alt = pad + qr + 1.5 + 3.4 + 0.6 + maxLinhas * 2.9 + pad;
+
+  const colunas = Math.max(1, Math.floor((210 - 2 * margem) / larg));
+  const linhas = Math.max(1, Math.floor((297 - 2 * margem) / alt));
+  const porPagina = colunas * linhas;
+
+  itens.forEach((p, i) => {
+    if (i > 0 && i % porPagina === 0) doc.addPage();
+    const pos = i % porPagina;
+    const x = margem + (pos % colunas) * larg;
+    const y = margem + Math.floor(pos / colunas) * alt;
+
+    if (guias) {
+      doc.setDrawColor(185, 176, 167).setLineWidth(0.2).setLineDashPattern([1, 1], 0);
+      doc.rect(x, y, larg, alt);
+      doc.setLineDashPattern([], 0);
+    }
+
+    // QR: um quadradinho preto por módulo (nítido em qualquer impressora).
+    const q = qrcode(0, 'M'); q.addData(String(p.codigo)); q.make();
+    const n = q.getModuleCount(), m = qr / n;
+    const qx = x + (larg - qr) / 2, qy = y + pad;
+    doc.setFillColor(0, 0, 0);
+    for (let r = 0; r < n; r++) {
+      for (let c = 0; c < n; c++) {
+        if (q.isDark(r, c)) doc.rect(qx + c * m, qy + r * m, m + 0.02, m + 0.02, 'F');
+      }
+    }
+
+    const cx = x + larg / 2;
+    let ty = qy + qr + 1.5 + 3;
+    doc.setTextColor(0, 0, 0).setFont('helvetica', 'bold').setFontSize(9);
+    doc.text(String(p.codigo), cx, ty, { align: 'center' });
+    doc.setFont('helvetica', 'normal').setFontSize(7.5);
+    nomeLinhas(p.nome).forEach((linha, k) => doc.text(linha, cx, ty + 3.4 + k * 2.9, { align: 'center' }));
+  });
+  return doc;
+}
+
+$('btn-pdf').addEventListener('click', () => {
+  if (!state.produtos.some(p => !state.etqDesmarcados.has(p.codigo))) { toast('Marque ao menos um item.', true); return; }
+  if (!window.jspdf) { toast('Biblioteca de PDF não carregou. Verifique a internet e recarregue.', true); return; }
+  try {
+    gerarPdfEtiquetas().save('etiquetas-viva.pdf');
+    toast('PDF gerado.');
+  } catch (err) {
+    toast('Erro ao gerar o PDF: ' + err.message, true);
+  }
+});
+
 $('btn-imprimir').addEventListener('click', () => {
   if (!state.produtos.some(p => !state.etqDesmarcados.has(p.codigo))) { toast('Marque ao menos um item.', true); return; }
   window.print();
