@@ -72,6 +72,7 @@ function aplicarDados(d) {
   state.historico = (d.historico || []).concat(state.pendentes);
   state.status = d.status || [];
   renderProdutos();
+  renderEtiquetas();
   renderTemplateSelectors();
   escolherEventoInicial();
   renderEventoCards();
@@ -379,6 +380,52 @@ async function excluirProduto(codigo) {
     toast('Erro ao excluir: ' + err.message, true);
   }
 }
+
+/* ================= ETIQUETAS ================= */
+
+// null = todos marcados (padrão). Depois de mexer, guarda os códigos desmarcados.
+state.etqDesmarcados = new Set();
+
+function qrSvg(codigo) {
+  const qr = qrcode(0, 'M');
+  qr.addData(String(codigo));
+  qr.make();
+  return qr.createSvgTag({ scalable: true, margin: 0 });
+}
+
+function renderEtiquetas() {
+  const marcados = state.produtos.filter(p => !state.etqDesmarcados.has(p.codigo));
+  $('etq-count').textContent = `${marcados.length} de ${state.produtos.length}`;
+  $('etq-resumo').textContent = `Escolher itens (${marcados.length} de ${state.produtos.length})`;
+
+  $('etq-lista').innerHTML = state.produtos.map(p => `
+    <label><input type="checkbox" data-cod="${escapeHtml(p.codigo)}" ${state.etqDesmarcados.has(p.codigo) ? '' : 'checked'}>
+      <span>${escapeHtml(p.nome)} <small>${escapeHtml(p.codigo)}</small></span></label>`).join('');
+
+  const area = $('etq-area');
+  area.style.setProperty('--qr', `${$('etq-tamanho').value}cm`);
+  area.classList.toggle('guias', $('etq-guias').value === '1');
+  area.innerHTML = marcados.length
+    ? marcados.map(p => `<div class="etq" style="--qr:${$('etq-tamanho').value}cm">${qrSvg(p.codigo)}` +
+        `<div class="cod">${escapeHtml(p.codigo)}</div><div class="nome">${escapeHtml(p.nome)}</div></div>`).join('')
+    : '<div class="vazio" style="width:100%">Nenhum item marcado.</div>';
+}
+
+$('etq-tamanho').addEventListener('change', renderEtiquetas);
+$('etq-guias').addEventListener('change', renderEtiquetas);
+$('etq-todos').addEventListener('click', () => { state.etqDesmarcados.clear(); renderEtiquetas(); });
+$('etq-nenhum').addEventListener('click', () => { state.produtos.forEach(p => state.etqDesmarcados.add(p.codigo)); renderEtiquetas(); });
+$('etq-lista').addEventListener('change', (e) => {
+  const cb = e.target.closest('input[data-cod]');
+  if (!cb) return;
+  if (cb.checked) state.etqDesmarcados.delete(cb.dataset.cod); else state.etqDesmarcados.add(cb.dataset.cod);
+  renderEtiquetas();
+  $('etq-lista').closest('details').open = true;
+});
+$('btn-imprimir').addEventListener('click', () => {
+  if (!state.produtos.some(p => !state.etqDesmarcados.has(p.codigo))) { toast('Marque ao menos um item.', true); return; }
+  window.print();
+});
 
 /* ================= TEMPLATES ================= */
 

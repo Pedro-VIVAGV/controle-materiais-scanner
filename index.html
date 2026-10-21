@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#F76E18" />
 <title>Controle de Materiais · VIVA</title>
 <link rel="icon" type="image/svg+xml" href="img/icone-viva.svg" />
-<link rel="stylesheet" href="css/style.css?v=9" />
+<link rel="stylesheet" href="css/style.css?v=10" />
 </head>
 <body>
 
@@ -24,6 +24,10 @@
     <button data-screen="screen-produtos" class="nav-btn">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 8 12 3 3 8v8l9 5 9-5V8ZM3 8l9 5 9-5M12 13v8"/></svg>
       <span>Produtos</span>
+    </button>
+    <button data-screen="screen-etiquetas" class="nav-btn">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h3v3h-3zM20 14v.01M14 20h.01M17 20h4v-3"/></svg>
+      <span>Etiquetas</span>
     </button>
     <button data-screen="screen-templates" class="nav-btn">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg>
@@ -150,6 +154,50 @@
     <ul id="produtos-lista" class="list"></ul>
   </section>
 
+  <!-- ETIQUETAS -->
+  <section id="screen-etiquetas" class="screen">
+    <div class="page-head">
+      <h2>Etiquetas</h2>
+      <span id="etq-count" class="chip"></span>
+    </div>
+
+    <div class="card etq-controles">
+      <div class="row-2">
+        <div class="field">
+          <label for="etq-tamanho">Tamanho do QR</label>
+          <select id="etq-tamanho">
+            <option value="2">2,0 cm (mín.)</option>
+            <option value="2.5" selected>2,5 cm (ideal)</option>
+            <option value="3">3,0 cm</option>
+            <option value="4">4,0 cm</option>
+            <option value="5">5,0 cm</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="etq-guias">Linhas de corte</label>
+          <select id="etq-guias">
+            <option value="1">Tracejadas</option>
+            <option value="0">Sem linhas</option>
+          </select>
+        </div>
+      </div>
+
+      <details class="etq-escolha">
+        <summary id="etq-resumo">Escolher itens</summary>
+        <div class="etq-botoes">
+          <button type="button" id="etq-todos" class="mini-btn">Marcar todos</button>
+          <button type="button" id="etq-nenhum" class="mini-btn">Desmarcar todos</button>
+        </div>
+        <div id="etq-lista" class="etq-lista"></div>
+      </details>
+
+      <button id="btn-imprimir" class="btn btn-primary">Imprimir etiquetas</button>
+      <p class="hint">Na janela de impressão, deixe a escala em <strong>100% (tamanho real)</strong>, desligue "ajustar à página" e use papel adesivo.</p>
+    </div>
+
+    <div id="etq-area" class="etq-area guias"></div>
+  </section>
+
   <!-- TEMPLATES -->
   <section id="screen-templates" class="screen">
     <div class="page-head"><h2>Templates de evento</h2></div>
@@ -229,8 +277,9 @@
 <div id="toast" class="toast hidden"></div>
 
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
 <script src="js/config.js?v=3"></script>
 <script src="js/api.js?v=5"></script>
-<script src="js/app.js?v=9"></script>
+<script src="js/app.js?v=10"></script>
 </body>
 </html>
