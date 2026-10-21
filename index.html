@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#F76E18" />
 <title>Controle de Materiais · VIVA</title>
 <link rel="icon" type="image/svg+xml" href="img/icone-viva.svg" />
-<link rel="stylesheet" href="css/style.css?v=7" />
+<link rel="stylesheet" href="css/style.css?v=9" />
 </head>
 <body>
 
@@ -43,7 +43,14 @@
     <div class="field-label">Evento</div>
     <button id="evento-card" class="evento-card" type="button"></button>
 
+    <div class="field-label">Modo de bipagem</div>
+    <div class="modo" id="modo" role="group" aria-label="Modo de bipagem">
+      <button type="button" class="modo-btn" data-modo="saida">SAÍDA</button>
+      <button type="button" class="modo-btn" data-modo="retorno">RETORNO</button>
+    </div>
+
     <div class="camera-box" id="camera-box">
+      <div id="flash" class="flash hidden"></div>
       <div id="reader"></div>
       <div class="camera-placeholder" id="camera-placeholder">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2M4 12h16"/></svg>
@@ -52,6 +59,14 @@
     </div>
     <p id="scanner-hint" class="hint center">Aponte para o QR code ou código de barras do item.</p>
     <button id="btn-toggle-scan" class="btn btn-primary btn-lg">Ligar câmera</button>
+
+    <div id="ultimos" class="card hidden">
+      <div class="card-head">
+        <h3>Últimos registros</h3>
+        <span id="ultimos-count" class="chip chip-orange"></span>
+      </div>
+      <ul id="ultimos-lista" class="expected"></ul>
+    </div>
 
     <div id="lista-esperada" class="card hidden">
       <div class="card-head">
@@ -216,6 +231,6 @@
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script src="js/config.js?v=3"></script>
 <script src="js/api.js?v=5"></script>
-<script src="js/app.js?v=8"></script>
+<script src="js/app.js?v=9"></script>
 </body>
 </html>

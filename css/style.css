@@ -176,6 +176,21 @@ input:focus, select:focus { border-color: var(--orange); box-shadow: 0 0 0 3px r
 .camera-box.on .camera-placeholder { display: none; }
 .camera-box.on { min-height: 0; }
 
+/* ---------- Modo de bipagem ---------- */
+.modo { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; }
+.modo-btn { min-height: 54px; border-radius: 12px; border: 2px solid var(--line); background: #fff; color: var(--muted); font-size: 17px; font-weight: 900; letter-spacing: .02em; cursor: pointer; }
+.modo-btn.on-saida { background: var(--orange); border-color: var(--orange); color: #fff; box-shadow: 0 3px 10px rgba(247, 110, 24, .35); }
+.modo-btn.on-retorno { background: var(--green); border-color: var(--green); color: #fff; box-shadow: 0 3px 10px rgba(47, 125, 79, .35); }
+.modo-btn:active { transform: scale(.98); }
+
+.flash { position: absolute; left: 10px; right: 10px; top: 10px; z-index: 5; padding: 12px 14px; border-radius: 12px; color: #fff; font-weight: 800; font-size: 16px; text-align: center; box-shadow: 0 6px 18px rgba(0, 0, 0, .35); }
+.flash.saida { background: var(--orange); }
+.flash.retorno { background: var(--green); }
+.flash.erro { background: var(--red); }
+
+.expected li .estado-envio { flex: none; font-size: 14px; width: 22px; text-align: center; }
+.expected li.erro .nome { color: var(--red); }
+
 /* ---------- Lista esperada ---------- */
 .expected { list-style: none; margin: 0; padding: 0; }
 .expected li { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }

@@ -9,6 +9,11 @@ const state = {
   eventoPadraoId: null,
   scannedCodesThisSession: new Set(),
   pendingScan: null,  // produto lido aguardando confirmação
+  modo: null,         // 'saida' | 'retorno' | null (definido no 1º registro)
+  ultimos: [],        // últimos registros da sessão (com status de envio)
+  pendentes: [],      // registros provisórios ainda sendo enviados
+  emFila: 0,
+  fila: Promise.resolve(),
   ultimoCodigo: null,
   ignorarAte: 0,
   templateItensEmEdicao: [],
@@ -63,7 +68,8 @@ function aplicarDados(d) {
   state.produtos = d.produtos || [];
   state.templates = d.templates || {};
   state.eventos = d.eventos || [];
-  state.historico = d.historico || [];
+  // Mantém registros que ainda estão sendo enviados (não apareceram no Sheets ainda).
+  state.historico = (d.historico || []).concat(state.pendentes);
   state.status = d.status || [];
   renderProdutos();
   renderTemplateSelectors();
@@ -252,7 +258,7 @@ $('picker').addEventListener('click', (e) => {
     state.eventoConfirmId = item.dataset.id;
   } else if (state.eventoAtivoId !== item.dataset.id) {
     state.eventoAtivoId = item.dataset.id;
-    state.scannedCodesThisSession.clear();
+    reiniciarSessaoDoScanner();
   }
   renderEventoCards();
   fecharPicker();
@@ -536,9 +542,120 @@ function onScanSuccess(decodedText) {
     toast(`Código não reconhecido: ${codigo}`, true);
     return;
   }
+  const ult = ultimoRegistro(codigo);
+  const fora = !!ult && ult.tipo === 'saida';
+
+  // Modo rápido: se o item combina com o modo escolhido, registra na hora e segue bipando.
+  if (state.modo && (state.modo === 'saida') !== fora) {
+    const origem = fora ? state.eventos.find(e => e.nome === ult.evento) : null;
+    const evento = origem || state.eventos.find(e => e.id === state.eventoAtivoId);
+    mostrarFlash(state.modo, produto.nome);
+    enviarRegistro(produto, state.modo, evento);
+    return;
+  }
+
+  // Sem modo escolhido (1º item) ou item em estado incompatível com o modo: abre a confirmação.
+  if (state.modo) {
+    if (navigator.vibrate) navigator.vibrate([120, 60, 120]);
+    toast(fora ? `"${produto.nome}" já está FORA: só pode ser devolvido.`
+               : `"${produto.nome}" não está fora: só pode sair.`, true);
+  }
   // Pausa (sem desligar a câmera) enquanto a confirmação está aberta.
   try { state.html5QrCode.pause(true); } catch (e) {}
   abrirConfirmacao(produto);
+}
+
+/* ---- Modo de bipagem (SAÍDA / RETORNO) ---- */
+
+function setModo(modo) {
+  state.modo = modo;
+  document.querySelectorAll('.modo-btn').forEach(b => {
+    b.classList.toggle('on-saida', b.dataset.modo === 'saida' && modo === 'saida');
+    b.classList.toggle('on-retorno', b.dataset.modo === 'retorno' && modo === 'retorno');
+  });
+  $('scanner-hint').textContent = !modo
+    ? 'Escolha SAÍDA ou RETORNO, ou bipe o 1º item para definir. Depois cada item é registrado na hora.'
+    : `Modo ${modo === 'saida' ? 'SAÍDA' : 'RETORNO'}: cada item lido é registrado na hora.`;
+}
+
+document.querySelectorAll('.modo-btn').forEach(b => {
+  b.addEventListener('click', () => setModo(b.dataset.modo));
+});
+
+// Novo evento selecionado: recomeça a conferência.
+function reiniciarSessaoDoScanner() {
+  state.scannedCodesThisSession.clear();
+  state.ultimos = [];
+  setModo(null);
+  renderUltimos();
+}
+
+function mostrarFlash(tipo, nome) {
+  const el = $('flash');
+  el.className = 'flash ' + tipo;
+  el.textContent = `✓ ${tipo === 'saida' ? 'SAÍDA' : 'RETORNO'} · ${nome}`;
+  clearTimeout(mostrarFlash._t);
+  mostrarFlash._t = setTimeout(() => el.classList.add('hidden'), 1600);
+}
+
+function renderUltimos() {
+  const box = $('ultimos');
+  if (!state.ultimos.length) { box.classList.add('hidden'); return; }
+  box.classList.remove('hidden');
+  const ok = state.ultimos.filter(u => u.status === 'ok').length;
+  $('ultimos-count').textContent = `${ok} registrado${ok === 1 ? '' : 's'}`;
+  const icone = { enviando: '⏳', ok: '✓', erro: '✕' };
+  $('ultimos-lista').innerHTML = state.ultimos.map(u =>
+    `<li class="${u.status === 'erro' ? 'erro' : ''}"><span class="estado-envio">${icone[u.status]}</span>` +
+    `<span class="nome">${escapeHtml(u.nome)}</span>` +
+    `<span class="chip ${u.tipo === 'saida' ? 'chip-orange' : 'chip-green'}">${u.tipo === 'saida' ? 'Saída' : 'Retorno'}</span></li>`).join('');
+}
+
+// Registra na hora na tela e envia ao Sheets em segundo plano, em fila (mantém a ordem).
+function enviarRegistro(produto, tipo, evento) {
+  const rotulo = tipo === 'saida' ? 'Saída' : 'Retorno';
+  state.ultimoCodigo = produto.codigo;
+  state.ignorarAte = Date.now() + 2500;
+  state.scannedCodesThisSession.add(produto.codigo);
+  // Registro provisório: o próximo bip do mesmo item já enxerga o novo estado.
+  const provisorio = { timestamp: new Date().toISOString(), codigoItem: produto.codigo, nomeItem: produto.nome, tipo, evento: evento ? evento.nome : '' };
+  state.historico.push(provisorio);
+  state.pendentes.push(provisorio);
+  const linha = { nome: produto.nome, tipo, status: 'enviando' };
+  state.ultimos.unshift(linha);
+  state.ultimos.length = Math.min(state.ultimos.length, 8);
+  renderListaEsperada();
+  renderUltimos();
+  if (navigator.vibrate) navigator.vibrate(50);
+
+  state.emFila++;
+  state.fila = state.fila.then(async () => {
+    try {
+      await Api.bipar(produto.codigo, tipo, evento ? evento.nome : '');
+      linha.status = 'ok';
+    } catch (err) {
+      linha.status = 'erro';
+      state.historico = state.historico.filter(h => h !== provisorio);
+      state.scannedCodesThisSession.delete(produto.codigo);
+      renderListaEsperada();
+      toast(`ERRO: ${rotulo} de "${produto.nome}" NÃO foi registrada. Bipe de novo. (${err.message})`, true);
+    } finally {
+      state.pendentes = state.pendentes.filter(h => h !== provisorio);
+      state.emFila--;
+      renderUltimos();
+      if (state.emFila === 0) await atualizarStatusEmSegundoPlano();
+    }
+  });
+}
+
+// Só atualiza o histórico quando a fila esvazia, mantendo o que ainda está sendo enviado.
+async function atualizarStatusEmSegundoPlano() {
+  try {
+    const [historico, status] = await Promise.all([Api.getHistorico(), Api.getStatus()]);
+    state.historico = historico.concat(state.pendentes);
+    state.status = status;
+    renderHistoricoEStatus();
+  } catch (e) { /* a próxima abertura recarrega */ }
 }
 
 // Volta ao scanner com a câmera já ligada, pronta para o próximo item.
@@ -632,35 +749,18 @@ $('btn-cancelar-confirm').addEventListener('click', voltarAoScanner);
 $('btn-saida').addEventListener('click', () => confirmarBipagem('saida'));
 $('btn-retorno').addEventListener('click', () => confirmarBipagem('retorno'));
 
-async function confirmarBipagem(tipo) {
+function confirmarBipagem(tipo) {
   const produto = state.pendingScan;
   if (!produto) return;
   const evento = state.eventos.find(ev => ev.id === eventoDaConfirmacao());
-  const rotulo = tipo === 'saida' ? 'Saída' : 'Retorno';
-
-  // Volta a bipar na hora; o envio ao Sheets segue em segundo plano.
-  state.ultimoCodigo = produto.codigo;
-  state.scannedCodesThisSession.add(produto.codigo);
-  // Registro provisório: o próximo bip do mesmo item já enxerga o novo estado.
-  const provisorio = { timestamp: new Date().toISOString(), codigoItem: produto.codigo, nomeItem: produto.nome, tipo, evento: evento ? evento.nome : '' };
-  state.historico.push(provisorio);
-  renderListaEsperada();
+  // O que foi escolhido aqui vira o modo: os próximos itens seguem o mesmo tipo.
+  // A "saída de emergência" (tipo fora do normal para o item) não muda o modo.
+  const ult = ultimoRegistro(produto.codigo);
+  const tipoNormal = (ult && ult.tipo === 'saida') ? 'retorno' : 'saida';
+  if (tipo === tipoNormal) setModo(tipo);
   voltarAoScanner();
-  toast(`Registrando ${rotulo.toLowerCase()}: ${produto.nome}…`);
-
-  try {
-    await Api.bipar(produto.codigo, tipo, evento ? evento.nome : '');
-    toast(`✓ ${rotulo} registrada: ${produto.nome}`);
-    const [historico, status] = await Promise.all([Api.getHistorico(), Api.getStatus()]);
-    state.historico = historico;
-    state.status = status;
-    renderHistoricoEStatus();
-  } catch (err) {
-    state.historico = state.historico.filter(h => h !== provisorio);
-    state.scannedCodesThisSession.delete(produto.codigo);
-    renderListaEsperada();
-    toast(`ERRO: ${rotulo} de "${produto.nome}" NÃO foi registrada. Bipe de novo. (${err.message})`, true);
-  }
+  mostrarFlash(tipo, produto.nome);
+  enviarRegistro(produto, tipo, evento);
 }
 
 /* ================= STATUS / HISTÓRICO ================= */
@@ -721,6 +821,7 @@ function formatDate(v) {
 
 renderListaEditavel('template-itens-lista', state.templateItensEmEdicao);
 renderListaEditavel('evento-itens-lista', state.eventoItensEmEdicao);
+setModo(null);
 const cacheInicial = lerCache();
 if (cacheInicial) aplicarDados(cacheInicial);
 else renderEventoCards();
