@@ -406,7 +406,9 @@ function renderEtiquetas() {
   area.style.setProperty('--qr', `${$('etq-tamanho').value}cm`);
   area.classList.toggle('guias', $('etq-guias').value === '1');
   area.innerHTML = marcados.length
-    ? marcados.map(p => `<div class="etq" style="--qr:${$('etq-tamanho').value}cm">${qrSvg(p.codigo)}` +
+    ? marcados.map(p => `<div class="etq" style="--qr:${$('etq-tamanho').value}cm">` +
+        `<div class="etq-top"><img class="etq-logo" src="img/logo-viva-preto.svg" alt="VIVA eventos">` +
+        `<div class="etq-qrbox"><div class="etq-pat">PATRIMÔNIO</div>${qrSvg(p.codigo)}</div></div>` +
         `<div class="cod">${escapeHtml(p.codigo)}</div><div class="nome">${escapeHtml(p.nome)}</div></div>`).join('')
     : '<div class="vazio" style="width:100%">Nenhum item marcado.</div>';
 }
@@ -422,22 +424,39 @@ $('etq-lista').addEventListener('change', (e) => {
   renderEtiquetas();
   $('etq-lista').closest('details').open = true;
 });
-// Monta o PDF (A4) com as etiquetas marcadas, no tamanho escolhido. QR desenhado em vetor.
-function gerarPdfEtiquetas() {
-  const { jsPDF } = window.jspdf;
-  const itens = state.produtos.filter(p => !state.etqDesmarcados.has(p.codigo));
-  const qrCm = Number($('etq-tamanho').value);
-  const guias = $('etq-guias').value === '1';
-  const MM = 10; // 1 cm = 10 mm
-  const qr = qrCm * MM;
-  const larg = Math.max(34, qr + 10);        // mesma regra da tela: máx(3,4cm; QR + 1cm)
-  const pad = 3;
-  const margem = 8;
+// Logo preta em PNG (alta resolução), carregada uma vez, para desenhar no PDF.
+let logoPretoPng = null;
+async function carregarLogoPreta() {
+  if (logoPretoPng) return logoPretoPng;
+  const svg = (await (await fetch('img/logo-viva-preto.svg')).text())
+    .replace(/width="[^"]*mm"/, 'width="1400"').replace(/height="[^"]*mm"/, 'height="668"');
+  const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
+  const img = new Image();
+  await new Promise((ok, erro) => { img.onload = ok; img.onerror = () => erro(new Error('logo não carregou')); img.src = url; });
+  const c = document.createElement('canvas');
+  c.width = 1400; c.height = 668;
+  c.getContext('2d').drawImage(img, 0, 0, 1400, 668);
+  URL.revokeObjectURL(url);
+  logoPretoPng = c.toDataURL('image/png');
+  return logoPretoPng;
+}
 
-  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
-  const nomeLinhas = (nome) => doc.setFont('helvetica', 'normal').setFontSize(7.5).splitTextToSize(String(nome), larg - 2 * pad).slice(0, 3);
+// Monta o PDF (A4) com as etiquetas marcadas, no modelo "Patrimônio" e no tamanho escolhido.
+// Medidas em mm, iguais às da tela: logo à esquerda; "PATRIMÔNIO" + QR à direita; código e descrição embaixo.
+async function gerarPdfEtiquetas() {
+  const { jsPDF } = window.jspdf;
+  const logo = await carregarLogoPreta();
+  const itens = state.produtos.filter(p => !state.etqDesmarcados.has(p.codigo));
+  const qr = Number($('etq-tamanho').value) * 10;
+  const guias = $('etq-guias').value === '1';
+  const pad = 3, logoL = 28, folga = 3.5, patH = 3.5, margem = 8;
+  const logoA = logoL * 668 / 1400;
+  const larg = pad + logoL + folga + qr + pad;
+
+  const doc = new jsPDF({ unit: 'mm', format: 'a4', compress: true });
+  const nomeLinhas = (nome) => doc.setFont('helvetica', 'normal').setFontSize(7.5).splitTextToSize(String(nome), larg - 2 * pad).slice(0, 2);
   const maxLinhas = Math.max(1, ...itens.map(p => nomeLinhas(p.nome).length));
-  const alt = pad + qr + 1.5 + 3.4 + 0.6 + maxLinhas * 2.9 + pad;
+  const alt = pad + patH + qr + 2 + 3.8 + maxLinhas * 2.9 + pad;
 
   const colunas = Math.max(1, Math.floor((210 - 2 * margem) / larg));
   const linhas = Math.max(1, Math.floor((297 - 2 * margem) / alt));
@@ -455,10 +474,15 @@ function gerarPdfEtiquetas() {
       doc.setLineDashPattern([], 0);
     }
 
+    const qx = x + larg - pad - qr, qy = y + pad + patH;
+    doc.addImage(logo, 'PNG', x + pad, qy + (qr - logoA) / 2, logoL, logoA, 'logoVivaPreto'); // alias: embute a imagem uma vez só
+
+    doc.setTextColor(0, 0, 0).setFont('helvetica', 'bold').setFontSize(7);
+    doc.text('PATRIMÔNIO', qx + qr / 2, y + pad + 2.6, { align: 'center' });
+
     // QR: um quadradinho preto por módulo (nítido em qualquer impressora).
     const q = qrcode(0, 'M'); q.addData(String(p.codigo)); q.make();
     const n = q.getModuleCount(), m = qr / n;
-    const qx = x + (larg - qr) / 2, qy = y + pad;
     doc.setFillColor(0, 0, 0);
     for (let r = 0; r < n; r++) {
       for (let c = 0; c < n; c++) {
@@ -467,20 +491,20 @@ function gerarPdfEtiquetas() {
     }
 
     const cx = x + larg / 2;
-    let ty = qy + qr + 1.5 + 3;
-    doc.setTextColor(0, 0, 0).setFont('helvetica', 'bold').setFontSize(9);
+    const ty = qy + qr + 2 + 3.2;
+    doc.setFont('helvetica', 'bold').setFontSize(10);
     doc.text(String(p.codigo), cx, ty, { align: 'center' });
     doc.setFont('helvetica', 'normal').setFontSize(7.5);
-    nomeLinhas(p.nome).forEach((linha, k) => doc.text(linha, cx, ty + 3.4 + k * 2.9, { align: 'center' }));
+    nomeLinhas(p.nome).forEach((linha, k) => doc.text(linha, cx, ty + 3.6 + k * 2.9, { align: 'center' }));
   });
   return doc;
 }
 
-$('btn-pdf').addEventListener('click', () => {
+$('btn-pdf').addEventListener('click', async () => {
   if (!state.produtos.some(p => !state.etqDesmarcados.has(p.codigo))) { toast('Marque ao menos um item.', true); return; }
   if (!window.jspdf) { toast('Biblioteca de PDF não carregou. Verifique a internet e recarregue.', true); return; }
   try {
-    gerarPdfEtiquetas().save('etiquetas-viva.pdf');
+    (await gerarPdfEtiquetas()).save('etiquetas-viva.pdf');
     toast('PDF gerado.');
   } catch (err) {
     toast('Erro ao gerar o PDF: ' + err.message, true);
